@@ -1,22 +1,24 @@
 #include <Debug.h>
-
 #include "DEV_Config.h"
 #include "Waveshare_AS7341.h"
-#define SENSOR_TRIGGER_PIN 7
 
-#define LASER_PIN_SUPERCON 13
-// PWM pin
+// https://roboticsbackend.com/arduino-fast-digitalwrite/ als Alternative
+//#include <digitalWriteFast.h>
+
+#define SENSOR_TRIGGER_PIN 7
+// PWM Pin
 #define LASER_PIN_445 6
-// PWM pin
+// PWM Pin
 #define LASER_PIN_405 5
+#define LASER_PIN_SUPERCON 4
 
 unsigned long superconTime = 0;
 unsigned int superconPeriod = 200;
-unsigned int superconDuration = 100;  //100
+unsigned int superconDuration = 100;
 
-// PWM value betwenn 0-255
+// PWM-Signal zwischen 0-255
 byte laser445Brightness = 255;
-// PWM value betwenn 0-255
+// PWM-Signal zwischen 0-255
 byte laser405Brightness = 255;
 
 void setup() {
@@ -24,9 +26,9 @@ void setup() {
   DEV_ModuleInit();
   AS7341_Init(eSyns);
   // approximately ATIME*ASTEP*2.8 µs is the intergration time
-  AS7341_ATIME_config(3);    //10
-  AS7341_ASTEP_config(100);  //150
-  AS7341_AGAIN_config(5);    //6
+  AS7341_ATIME_config(3);
+  AS7341_ASTEP_config(100);
+  AS7341_AGAIN_config(5);
 
   pinMode(SENSOR_TRIGGER_PIN, OUTPUT);
   digitalWrite(SENSOR_TRIGGER_PIN, HIGH);
@@ -113,18 +115,40 @@ void externalTriggerLaser(char charState) {
   switch (charState) {
 
     case '0':
-      analogWrite(LASER_PIN_445, 0);
-      analogWrite(LASER_PIN_405, 0);
-      digitalWrite(LASER_PIN_SUPERCON, HIGH);
-      //Serial.println("turned off");
+
+      // schneller als digitalWriteFast-Library
+      turnLasersOff();
       break;
 
+      // // analogWrite(LASER_PIN_445, 0);
+      // // analogWrite(LASER_PIN_405, 0);
+      // digitalWriteFast(LASER_PIN_445, LOW);
+      // digitalWriteFast(LASER_PIN_405, LOW);
+
+      // //digitalWrite(LASER_PIN_SUPERCON, HIGH);
+      // digitalWriteFast(LASER_PIN_SUPERCON, HIGH);
+      // //Serial.println("turned off");
+      // break;
+
     case '1':
-      analogWrite(LASER_PIN_445, laser445Brightness);
-      analogWrite(LASER_PIN_405, laser405Brightness);
-      digitalWrite(LASER_PIN_SUPERCON, LOW);
-      //Serial.println("turned on");
+
+      // schneller als digitalWriteFast-Library
+      // ACHTUNG: ignoriert laser405Brightness und laser445Brightness, setzt direkt auf 255
+      turnLasersOn();
       break;
+
+      // // ähnlich wie in https://github.com/arduino/ArduinoCore-avr/blob/master/cores/arduino/wiring_analog.c:
+      // if (laser445Brightness == 255 && laser405Brightness == 255) {
+      //   digitalWriteFast(LASER_PIN_445, HIGH);
+      //   digitalWriteFast(LASER_PIN_405, HIGH);
+      // } else {
+      //   analogWrite(LASER_PIN_445, laser445Brightness);
+      //   analogWrite(LASER_PIN_405, laser405Brightness);
+      // }
+      // //digitalWrite(LASER_PIN_SUPERCON, LOW);
+      // digitalWriteFast(LASER_PIN_SUPERCON, LOW);
+      // //Serial.println("turned on");
+      // break;
   }
 }
 
@@ -255,4 +279,24 @@ void readSerial() {
     // reset array
     memset(serialData, 0x00, 15);
   }
+}
+
+// funktioniert nur für Arduino Uno (Unterschiede je nach Pin-Layout)
+
+void turnLasersOn() {
+  PORTD = B01100000;
+}
+
+void turnLasersOff() {
+  PORTD = B10010000;
+}
+
+// für Arduino-Uno: digitale Pins von 0-7 sind D, 8-13 B, analoge Pins C
+// https://roboticsbackend.com/arduino-uno-pins-a-complete-practical-guide/
+
+// alle Pins auf LOW setzen, pinNumber auf HIGH
+void digitalWriteFastAnalogHigh(byte pinNumber) {
+
+  PORTC = 0;
+  PORTC |= (1 << pinNumber);
 }
