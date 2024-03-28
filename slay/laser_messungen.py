@@ -8,12 +8,13 @@ from PIL import Image
 import sys
 import time
 import serial
+import tempfile
 import threading
 
 from laser_constants import *
 
 try:
-    from stellarnet_driverLibs import stellarnet_driver3 as sn
+    from stellarnet.stellarnet_driverLibs import stellarnet_driver3 as sn
 
     print(sn.version())
 except:
@@ -146,11 +147,15 @@ def wav2RGB(wavelength):
     return (int(SSS * R), int(SSS * G), int(SSS * B))
 
 
-def make_spectrum_image(width, height, wavelength, cache=False):
+def make_spectrum_image(width, height, wavelength, cache=True):
 
     if cache:
         try:
-            return Image.open("/tmp/background_spectrum.png")
+            return Image.open(
+                "{0}/spectrum_background_{1}_{2}.png".format(
+                    tempfile.gettempdir(), width, height
+                )
+            )
         except:
             pass
 
@@ -161,7 +166,11 @@ def make_spectrum_image(width, height, wavelength, cache=False):
             image.putpixel((x, y), wav2RGB(wavelength[x]))  #  + (200,)
 
     if cache:
-        image.save("/tmp/background_spectrum.png")
+        image.save(
+            "{0}/spectrum_background_{1}_{2}.png".format(
+                tempfile.gettempdir(), width, height
+            )
+        )
 
     return image
 
