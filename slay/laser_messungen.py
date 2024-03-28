@@ -3,6 +3,10 @@ from datetime import datetime
 import numpy as np
 
 np.set_printoptions(suppress=True)
+# andere backends sind ebenfalls möglich, brauchen aber teilweise andere dependencies
+import matplotlib
+
+matplotlib.use("GTK3Agg")
 import matplotlib.pyplot as plt
 from PIL import Image
 import sys
@@ -316,12 +320,12 @@ def plot_results(
         result /= len(file_list)
         standard_deviation = np.std(standard_deviation_data, axis=0)
 
-        wave_min = min(wavelengths)
-        wave_max = max(wavelengths)
-
-        assert wave_min == wavelengths[0]
-        assert wave_max == wavelengths[-1]
-        print("true! change accordingly for effiency")
+        # wave_min = min(wavelengths)
+        # wave_max = max(wavelengths)
+        # assert wave_min == wavelengths[0]
+        # assert wave_max == wavelengths[-1]
+        wave_min = wavelengths[0]
+        wave_max = wavelengths[-1]
 
         intensity_min = min(result)
         intensity_max = max(result)
@@ -416,7 +420,8 @@ def plot_results(
     fig.savefig("Plots/" + title.replace("%", "Prozent"), dpi=300, bbox_inches="tight")
     if verbose:
         print("saved plot")
-    # plt.show(block=False)
+
+    plt.show()
     plt.close()
     plt.cla()
     plt.clf()
