@@ -15,6 +15,15 @@ import serial
 import tempfile
 import threading
 
+try:
+    from IPython.core import ultratb
+
+    sys.excepthook = ultratb.FormattedTB(
+        mode="Verbose", color_scheme="Linux", call_pdb=False
+    )
+except:
+    pass
+
 from laser_constants import *
 
 try:
@@ -23,11 +32,14 @@ try:
     print(sn.version())
 except:
     print("\n Failed to load the stellarnet library.\n")
+    import virtual_spectrometer as sn
+
     # exit()
 
 spectrometer = None
 wav = None
 arduino = None
+measurements = None
 
 if DEBUG:
     wav = np.zeros((2048,))
@@ -182,6 +194,7 @@ def spectrometer_setup():
     global spectrometer, wav
 
     spectrometer, wav = sn.array_get_spec(0)
+
     wav = wav.reshape(
         2048,
     )
@@ -225,7 +238,6 @@ def plot_results(
     iterator = 0
 
     fig, ax = plt.subplots()
-
     plt.grid(True)
 
     for setting in plotting_settings:
@@ -248,8 +260,6 @@ def plot_results(
         # temp_waves = np.array(temp_waves)
 
         wavelengths = np.load(file_list[0])["arr_1"]
-        print("waveshape")
-        print(wavelengths.shape)
 
         if setting.zoom_end == sys.maxsize:
             setting.zoom_end = 2048
@@ -360,12 +370,7 @@ def plot_results(
             color=colors[iterator],
             s=1,
         )
-        print(len(result), len(standard_deviation))
-
         assert len(result) == len(standard_deviation)
-
-        print(wavelengths.shape)
-        print(result.shape)
 
         ax.fill_between(
             wavelengths,
@@ -427,8 +432,48 @@ def plot_results(
     plt.clf()
 
 
-def make_plot():
-    pass
+def live_plotting():
+
+    return
+    plt.ion()
+    plt.grid(True)
+
+    colors = plt.cm.jet(np.linspace(0, 1, 2))
+    for i, measurement in enumerate(measurements):
+
+        if (
+            i + 1 != len(measurements)
+            and measurements[i + 1][0] != 0
+            and measurements[i + 1][-1] != 0
+        ):
+            continue
+
+        fig, ax = plt.subplots()
+        ax.scatter(
+            wav,
+            measurement,
+            label="Mittelwert von {0} Messungen".format(0),  # .format(currindex)
+            color=colors[0],
+            s=1,
+        )
+
+        fig.legend(
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.05),
+            fancybox=True,
+            shadow=True,
+            markerscale=4,
+        )  # ,ncols=3
+
+        plt.xlabel("Wellenlänge in nm")
+        plt.ylabel("Intensität in Counts")
+
+        plt.title(NAME)
+        plt.draw()
+
+        plt.pause(0.001)
+    plt.ioff()
+    return
 
 
 class UnixUser(object):
@@ -596,7 +641,6 @@ if __name__ == "__main__":
         ## bitte entfernen.
         if not CONTINOUS:
             arduino_setup("/dev/ttyUSB0", 1)
-            turn_on_laser()
 
     """
     measurements = []
@@ -607,6 +651,8 @@ if __name__ == "__main__":
     """
     # minimal schneller als jedes Mal list.append()
     measurements = np.zeros([REPETITIONS, 2048], dtype=float)
+
+    threading.Thread(target=live_plotting).start()
 
     seconds = time.time()
 
@@ -624,8 +670,6 @@ if __name__ == "__main__":
             time.sleep(IRRADITION_TIME / 1000.0)
             measurements[i] = get_data()
             turn_off_laser()
-            # TODO: implement (Thread, da es lange dauert)
-            # threading.Thread(target=make_plot, args=(measurements[i])).start()
             time.sleep(MEASUREMENT_DELAY / 1000.0)
             print(i)
             if time.time() - seconds > TIMEOUT:
@@ -667,7 +711,6 @@ if __name__ == "__main__":
         # manche Dateisysteme unterstützen keinen Doppelpunkt im Dateinamen
         file_name = DIR_PATH + str(datetime.now()).replace(":", "_")
 
-    print(DIR_PATH)
     np.savez_compressed(
         file_name, np.array(measurements), np.array(wav), np.array(metadata)
     )
