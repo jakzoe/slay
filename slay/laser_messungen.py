@@ -30,9 +30,13 @@ try:
     from stellarnet.stellarnet_driverLibs import stellarnet_driver3 as sn
 
     print(sn.version())
+    DEBUG = False
 except:
     print("\n Failed to load the stellarnet library.\n")
+    print("Running in debug-mode.\n")
     import virtual_spectrometer as sn
+
+    DEBUG = True
 
     # exit()
 
@@ -40,11 +44,6 @@ spectrometer = None
 wav = None
 arduino = None
 measurements = None
-
-if DEBUG:
-    wav = np.zeros((2048,))
-    for i in range(len(wav)):
-        wav[i] = 300 + i / 5.0
 
 
 class PlottingSettings:
@@ -636,11 +635,10 @@ if __name__ == "__main__":
         print(error)
         print("(directory is already existent)")
 
-    if not DEBUG:
-        spectrometer_setup()
-        ## bitte entfernen.
-        if not CONTINOUS:
-            arduino_setup("/dev/ttyUSB0", 1)
+    spectrometer_setup()
+    ## bitte entfernen.
+    if not CONTINOUS:
+        arduino_setup("/dev/ttyUSB0", 1)
 
     """
     measurements = []
@@ -656,10 +654,7 @@ if __name__ == "__main__":
 
     seconds = time.time()
 
-    if DEBUG:
-        for i in range(REPETITIONS):
-            measurements[i] = np.zeros([2048], dtype=float)
-    elif CONTINOUS:
+    if CONTINOUS:
         for i in range(REPETITIONS):
             measurements[i] = get_data()
             time.sleep(MEASUREMENT_DELAY / 1000.0)
@@ -691,8 +686,7 @@ if __name__ == "__main__":
     )
 
     # Spektrometer freigeben
-    if not DEBUG:
-        sn.reset(spectrometer)
+    sn.reset(spectrometer)
 
     metadata = np.zeros(9, dtype=int)
     metadata[INTTIME_INDEX] = INTTIME

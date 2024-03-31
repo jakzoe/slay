@@ -38,8 +38,6 @@ if GRAUFILTER:
 
 NAME += " mit " + str(INTENSITY) + " %"
 
-DEBUG = False
-
 # === Indices ===
 INTTIME_INDEX = 0
 INTENSITY_INDEX = 1
