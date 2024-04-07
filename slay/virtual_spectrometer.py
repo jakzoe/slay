@@ -28,8 +28,11 @@ def array_spectrum(arg, *args, **kwargs):
 
 # var = sn.getSpectrum_Y(spectrometer)
 def getSpectrum_Y(arg, *args, **kwargs):
-    return np.random.rand(
-        2048,
+    return (
+        np.random.rand(
+            2048,
+        )
+        * 100
     )
 
 

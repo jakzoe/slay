@@ -8,18 +8,21 @@ import matplotlib
 
 matplotlib.use("GTK3Agg")
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 from PIL import Image
 import sys
 import time
 import serial
 import tempfile
 import threading
+import io
 
+# Formatierung von Fehlern
 try:
     from IPython.core import ultratb
 
     sys.excepthook = ultratb.FormattedTB(
-        mode="Verbose", color_scheme="Linux", call_pdb=False
+        color_scheme="Linux", call_pdb=False  # mode="Verbose",
     )
 except:
     pass
@@ -44,6 +47,7 @@ spectrometer = None
 wav = None
 arduino = None
 measurements = None
+currMeasurementIndex = -1
 
 
 class PlottingSettings:
@@ -431,72 +435,81 @@ def plot_results(
     plt.clf()
 
 
-def live_plotting():
+def plot_to_image(fig):
+    buf = io.BytesIO()
+    fig.savefig(buf)
+    buf.seek(0)
+    return Image.open(buf)
 
-    return
-    plt.ion()
+
+def image_to_array(image):
+
+    width, height = image.size
+    pixel_array = []
+
+    for x in range(width):
+        for y in range(height):
+            pixel_array.append(image.getpixel(x, y))  # e.g. (130, 105, 49)
+            print(str(image.getpixel(x, y)))
+
+    return pixel_array
+
+
+live_fig, live_ax = plt.subplots()
+# plt.ion()
+
+
+def live_plotting(i):
+
+    # global measurements, live_fig, live_ax
+
+    if measurements.all() == None:
+        return
+
+    live_ax.clear()
+    live_fig.clear()
+
+    # plt.ion()
     plt.grid(True)
 
-    colors = plt.cm.jet(np.linspace(0, 1, 2))
-    for i, measurement in enumerate(measurements):
+    colors = plt.cm.jet(np.linspace(0, 1, 1))
 
-        if (
-            i + 1 != len(measurements)
-            and measurements[i + 1][0] != 0
-            and measurements[i + 1][-1] != 0
-        ):
-            continue
+    measurement = measurements[currMeasurementIndex]
 
-        fig, ax = plt.subplots()
-        ax.scatter(
-            wav,
-            measurement,
-            label="Mittelwert von {0} Messungen".format(0),  # .format(currindex)
-            color=colors[0],
-            s=1,
-        )
+    live_ax.scatter(
+        wav,
+        measurement,
+        label="Mittelwert von {0} Messungen".format(0),  # .format(currindex)
+        color=colors[0],
+        s=1,
+    )
 
-        fig.legend(
-            loc="upper center",
-            bbox_to_anchor=(0.5, -0.05),
-            fancybox=True,
-            shadow=True,
-            markerscale=4,
-        )  # ,ncols=3
+    live_fig.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.05),
+        fancybox=True,
+        shadow=True,
+        markerscale=4,
+    )  # ,ncols=3
 
-        plt.xlabel("Wellenlänge in nm")
-        plt.ylabel("Intensität in Counts")
+    plt.xlabel("Wellenlänge in nm")
+    plt.ylabel("Intensität in Counts")
 
-        plt.title(NAME)
-        plt.draw()
+    plt.title(NAME)
+    plt.draw()
 
-        plt.pause(0.001)
-    plt.ioff()
-    return
+    # plt.pause(0.001)
+    # plt.ioff()
 
 
-class UnixUser(object):
-
-    def __init__(self, uid, gid=None):
-        self.uid = uid
-        self.gid = gid
-
-    def __enter__(self):
-        self.cache = os.getuid(), os.getgid()
-        if self.gid is not None:
-            os.setgid(self.gid)
-        os.setuid(self.uid)
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        os.setuid(self.cache[0])
-        os.setgid(self.cache[1])
+ani = animation.FuncAnimation(live_fig, live_plotting, interval=100, frames=REPETITIONS)
 
 
 def time_measurement(iter: int):
 
     seconds_list = [time.time()]
 
-    for i in range(iter):
+    for _ in range(iter):
         turn_on_laser()
         time.sleep(IRRADITION_TIME / 1000.0)
         get_data()
@@ -650,23 +663,23 @@ if __name__ == "__main__":
     # minimal schneller als jedes Mal list.append()
     measurements = np.zeros([REPETITIONS, 2048], dtype=float)
 
-    threading.Thread(target=live_plotting).start()
+    # threading.Thread(target=live_plotting).start()
 
     seconds = time.time()
 
     if CONTINOUS:
-        for i in range(REPETITIONS):
-            measurements[i] = get_data()
+        for currMeasurementIndex in range(REPETITIONS):
+            measurements[currMeasurementIndex] = get_data()
             time.sleep(MEASUREMENT_DELAY / 1000.0)
-            print(i)
+            print(currMeasurementIndex)
     else:
-        for i in range(REPETITIONS):
+        for currMeasurementIndex in range(REPETITIONS):
             turn_on_laser()
             time.sleep(IRRADITION_TIME / 1000.0)
-            measurements[i] = get_data()
+            measurements[currMeasurementIndex] = get_data()
             turn_off_laser()
             time.sleep(MEASUREMENT_DELAY / 1000.0)
-            print(i)
+            print(currMeasurementIndex)
             if time.time() - seconds > TIMEOUT:
                 print("reached timeout!")
                 break
