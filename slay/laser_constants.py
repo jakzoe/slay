@@ -14,7 +14,7 @@ OVERWRITE = True
 ## === Einstellungen des Lasers ===
 
 # wie häufig eine Messung wiederholt wird
-REPETITIONS = 10  #  29.8 TiB for an a
+REPETITIONS = 10000  #  29.8 TiB for an a
 
 ## ACHTUNG: DELAY und IRRADITION_TIME sollten MINDESTENS 3 ms, sein, der Arduino schafft es nicht in kürzerer Zeit, alles anzustellen
 # Zeit in ms, die zwischen jeder Messung gewartet werden soll

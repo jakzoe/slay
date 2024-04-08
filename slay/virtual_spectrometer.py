@@ -3,7 +3,7 @@ import numpy as np
 
 # spectrometer, wav = sn.array_get_spec(0)
 def array_get_spec(*args, **kwargs):
-    return None, np.random.rand(2048, 1)
+    return None, np.sort(np.abs(np.random.rand(2048, 1) * 1000), axis=0)
 
 
 # sn.getDeviceId(spectrometer))
@@ -23,12 +23,12 @@ def setParam(arg, *args, **kwargs):
 
 # var = sn.array_spectrum(spectrometer, wav)
 def array_spectrum(arg, *args, **kwargs):
-    return np.random.rand(2048, 2)
+    return np.random.rand(2048, 2) * 100
 
 
 # var = sn.getSpectrum_Y(spectrometer)
 def getSpectrum_Y(arg, *args, **kwargs):
-    return (
+    return np.abs(
         np.random.rand(
             2048,
         )

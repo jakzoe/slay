@@ -8,6 +8,9 @@ import matplotlib
 
 matplotlib.use("GTK3Agg")
 import matplotlib.pyplot as plt
+
+# print(plt.style.available)
+plt.style.use(["seaborn-v0_8-pastel"])
 import matplotlib.animation as animation
 from PIL import Image
 import sys
@@ -16,6 +19,9 @@ import serial
 import tempfile
 import threading
 import io
+import socket
+import zlib
+import base64
 
 # Formatierung von Fehlern
 try:
@@ -48,6 +54,10 @@ wav = None
 arduino = None
 measurements = None
 currMeasurementIndex = -1
+
+HOST = "localhost"
+PORT = 8080
+sock = None
 
 
 class PlottingSettings:
@@ -437,72 +447,98 @@ def plot_results(
 
 def plot_to_image(fig):
     buf = io.BytesIO()
-    fig.savefig(buf)
+    fig.savefig(buf, dpi=300, bbox_inches="tight", format="jpg")  # Alpha entfernen
     buf.seek(0)
+    # Image.open(buf).save("buffered.png")
     return Image.open(buf)
 
 
 def image_to_array(image):
 
     width, height = image.size
-    pixel_array = []
+    bytes_list = bytearray()
 
     for x in range(width):
         for y in range(height):
-            pixel_array.append(image.getpixel(x, y))  # e.g. (130, 105, 49)
-            print(str(image.getpixel(x, y)))
+            coordinate = x, y
+            pixel = image.getpixel(coordinate)
+            bytes_list.append(pixel[0])
+            bytes_list.append(pixel[1])
+            bytes_list.append(pixel[2])
+            # if pixel[0] is not 255:
+            #     print(str(image.getpixel(coordinate)))
 
-    return pixel_array
+    return bytes_list
+
+
+def send_plot():
+    global sock
+
+    while True:
+        if sock is None:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.connect((HOST, PORT))
+            except:
+                sock = None
+                continue
+
+        live_plotting()
+
+        img = plot_to_image(live_fig)
+        img.thumbnail((600, 500))
+
+        sock.sendto(
+            ("size {0} {1}\n".format(img.size[0], img.size[1])).encode("utf-8"),
+            (HOST, PORT),
+        )
+        message = image_to_array(img)
+        sock.sendto(
+            base64.b64encode(zlib.compress(message)) + b"\n", (HOST, PORT)
+        )  # .encode('utf-8')
+
+        # data = sock.recv(1024)
 
 
 live_fig, live_ax = plt.subplots()
-# plt.ion()
+plt.xlabel("Wellenlänge in nm")
+plt.ylabel("Intensität in Counts")
+plt.grid(True)
+plt.title(NAME)
+
+scatter = live_ax.scatter([], [], label="Mittelwert von {0} Messungen".format(0), s=1)
 
 
-def live_plotting(i):
-
-    # global measurements, live_fig, live_ax
-
-    if measurements.all() == None:
+def live_plotting(i=None):
+    if len(measurements) == 0:
         return
-
-    live_ax.clear()
-    live_fig.clear()
-
-    # plt.ion()
-    plt.grid(True)
-
-    colors = plt.cm.jet(np.linspace(0, 1, 1))
 
     measurement = measurements[currMeasurementIndex]
 
-    live_ax.scatter(
-        wav,
-        measurement,
-        label="Mittelwert von {0} Messungen".format(0),  # .format(currindex)
-        color=colors[0],
-        s=1,
-    )
+    # die Daten im Scatter-Plot aktualisieren
+    scatter.set_offsets(np.column_stack((wav, measurement)))
 
-    live_fig.legend(
+    scatter.set_label("Spektrum von Messung {0}".format(currMeasurementIndex + 1))
+
+    # den Wertebereich der Axen anpassen
+    live_ax.set_xlim(wav[0], wav[-1])
+    live_ax.set_ylim(min(measurement), max(measurement))
+
+    live_ax.legend(
         loc="upper center",
         bbox_to_anchor=(0.5, -0.05),
         fancybox=True,
         shadow=True,
         markerscale=4,
-    )  # ,ncols=3
+    )
 
-    plt.xlabel("Wellenlänge in nm")
-    plt.ylabel("Intensität in Counts")
-
-    plt.title(NAME)
-    plt.draw()
-
-    # plt.pause(0.001)
-    # plt.ioff()
+    return (scatter,)
 
 
-ani = animation.FuncAnimation(live_fig, live_plotting, interval=100, frames=REPETITIONS)
+plt.ion()
+plt.show()
+
+ani = animation.FuncAnimation(live_fig, live_plotting, interval=10, frames=REPETITIONS)
 
 
 def time_measurement(iter: int):
@@ -663,23 +699,33 @@ if __name__ == "__main__":
     # minimal schneller als jedes Mal list.append()
     measurements = np.zeros([REPETITIONS, 2048], dtype=float)
 
-    # threading.Thread(target=live_plotting).start()
+    threading.Thread(
+        target=(
+            lambda: [plt.pause(0.1) for _ in iter(int, 1)]
+        ),  # endlos lange den Plot aktualisieren
+        daemon=True,  # der Python-Interpreter soll nicht auf den Thread warten, bevor er sich selbst beendet
+    ).start()
+
+    # threading.Thread(target=send_plot, daemon=True).start()
+    # plt.ioff()
 
     seconds = time.time()
 
     if CONTINOUS:
-        for currMeasurementIndex in range(REPETITIONS):
-            measurements[currMeasurementIndex] = get_data()
+        for i in range(REPETITIONS):
+            measurements[i] = get_data()
             time.sleep(MEASUREMENT_DELAY / 1000.0)
-            print(currMeasurementIndex)
+            print(i)
+            currMeasurementIndex += 1
     else:
-        for currMeasurementIndex in range(REPETITIONS):
+        for i in range(REPETITIONS):
             turn_on_laser()
             time.sleep(IRRADITION_TIME / 1000.0)
-            measurements[currMeasurementIndex] = get_data()
+            measurements[i] = get_data()
             turn_off_laser()
             time.sleep(MEASUREMENT_DELAY / 1000.0)
-            print(currMeasurementIndex)
+            print(i)
+            currMeasurementIndex += 1
             if time.time() - seconds > TIMEOUT:
                 print("reached timeout!")
                 break
