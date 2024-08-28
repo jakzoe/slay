@@ -246,7 +246,7 @@ def plot_results(
         ]
         if not file_list:
             print("the dir {0} ist empty!".format(setting.file_path))
-            plot_results.remove(setting)
+            plotting_settings.remove(setting)
 
     iterator = 0
 
@@ -261,7 +261,8 @@ def plot_results(
             if f.endswith(".npz")
         ]
 
-        colors = plt.cm.jet(np.linspace(0, 1, len(file_list) + 2))
+        # colors = plt.cm.jet(np.linspace(0, 1, len(file_list) + 2))
+        colors = plt.cm.get_cmap("jet")(np.linspace(0, 1, len(file_list) + 2))
 
         # temp_data = np.load(file_list[0])["arr_0"][0]
         # # print(temp_data.shape)
