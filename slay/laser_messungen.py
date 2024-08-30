@@ -6,7 +6,7 @@ np.set_printoptions(suppress=True)
 # andere backends sind ebenfalls möglich, brauchen aber teilweise andere dependencies
 import matplotlib
 
-matplotlib.use("GTK3Agg")
+matplotlib.use("Gtk3Agg")
 import matplotlib.pyplot as plt
 
 # print(plt.style.available)
@@ -710,13 +710,20 @@ if __name__ == "__main__":
     # threading.Thread(target=send_plot, daemon=True).start()
     # plt.ioff()
 
+    # warten, bis der Thread gestartet ist
+    time.sleep(0.5)
+    print("\nrepetitions:")
+
     seconds = time.time()
 
     if CONTINOUS:
         for i in range(REPETITIONS):
             measurements[i] = get_data()
             time.sleep(MEASUREMENT_DELAY / 1000.0)
-            print(i)
+            sys.stdout.write("\r")
+            sys.stdout.write(" " + str(i))
+            sys.stdout.flush()
+            # print(i)
             currMeasurementIndex += 1
     else:
         for i in range(REPETITIONS):
@@ -725,12 +732,16 @@ if __name__ == "__main__":
             measurements[i] = get_data()
             turn_off_laser()
             time.sleep(MEASUREMENT_DELAY / 1000.0)
-            print(i)
+            sys.stdout.write("\r")
+            sys.stdout.write(" " + str(i))
+            sys.stdout.flush()
+            # print(i)
             currMeasurementIndex += 1
             if time.time() - seconds > TIMEOUT:
-                print("reached timeout!")
+                print("\nreached timeout!")
                 break
-
+    # \r resetten
+    print()
     total_time_millis = int(round(time.time() * 1000)) - int(round(seconds * 1000))
     print("measurements took: {0} ms".format(total_time_millis))
     delays_time = (
