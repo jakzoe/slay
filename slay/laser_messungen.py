@@ -262,7 +262,7 @@ def plot_results(
         ]
 
         # colors = plt.cm.jet(np.linspace(0, 1, len(file_list) + 2))
-        colors = plt.cm.get_cmap("jet")(np.linspace(0, 1, len(file_list) + 2))
+        colors = matplotlib.colormaps["jet"](np.linspace(0, 1, len(file_list) + 2))
 
         # temp_data = np.load(file_list[0])["arr_0"][0]
         # # print(temp_data.shape)
