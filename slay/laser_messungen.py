@@ -1,5 +1,7 @@
 import os
 from datetime import datetime
+import subprocess
+import warnings
 import numpy as np
 
 np.set_printoptions(suppress=True)
@@ -22,6 +24,7 @@ import io
 import socket
 import zlib
 import base64
+import traceback
 
 # Formatierung von Fehlern
 try:
@@ -35,32 +38,38 @@ except:
 
 from laser_constants import *
 
-try:
-    from stellarnet.stellarnet_driverLibs import stellarnet_driver3 as sn
 
-    print(sn.version())
+try:
+    # from stellarnet.stellarnet_driverLibs import stellarnet_driver3 as sn
+    from driverLibs import stellarnet_driver3 as sn
+
+    # print(sn.version())
+
     DEBUG = False
-except:
+except Exception:
     print("\n Failed to load the stellarnet library.\n")
+    print(traceback.format_exc())
+
+    # exit()
     print("Running in debug-mode.\n")
     import virtual_spectrometer as sn
 
     DEBUG = True
 
-    # exit()
-
 spectrometer = None
 wav = None
 arduino = None
 measurements = None
-currMeasurementIndex = -1
+curr_measurement_index = -1
 
 HOST = "localhost"
 PORT = 8080
-sock = None
+SOCKET = None
 
 
 class PlottingSettings:
+    """Wrapper, welcher die Einstellungen für einen Plot enthält."""
+
     file_path = ""
 
     # Angabe: Wellenlänge
@@ -69,8 +78,8 @@ class PlottingSettings:
 
     # nur einen Ausschnitt/Batch aus den Messungen zur Durchschnittsberechnung etc. nutzten.
     # Angabe: Index
-    intervall_start = 0
-    intervall_end = 0
+    interval_start = 0
+    interval_end = 0
 
     normalize_integrationtime = False
     normalize_power = False
@@ -80,8 +89,8 @@ class PlottingSettings:
         file_path,
         zoom_start=0,
         zoom_end=sys.maxsize,
-        intervall_start=0,
-        intervall_end=sys.maxsize,
+        interval_start=0,
+        interval_end=sys.maxsize,
         normalize_integrationtime=False,
         normalize_power=False,
     ):
@@ -90,91 +99,98 @@ class PlottingSettings:
         self.zoom_start = zoom_start
         self.zoom_end = zoom_end
 
-        self.intervall_start = intervall_start
-        self.intervall_end = intervall_end
+        self.interval_start = interval_start
+        self.interval_end = interval_end
 
         self.normalize_integrationtime = normalize_integrationtime
         self.normalize_power = normalize_power
 
     def sliced(self) -> bool:
-        return not (self.intervall_start == 0 and self.intervall_end == sys.maxsize)
+        """Prüft, ob das Bild ein Ausschnitt einer Messreihe ist."""
+        return not (self.interval_start == 0 and self.interval_end == sys.maxsize)
 
     def zoom(self) -> bool:
+        """Prüft, ob das Bild ein Ausschnitt des Spektrums, welches das Spektrometer messen kann, ist."""
         return not (
             self.zoom_start == 0
             and (self.zoom_end == sys.maxsize or self.zoom_end == 2048)
         )
 
 
-def arduino_setup(PORT, wait):
+def arduino_setup(port, wait):
+    """Verbindet sich mit dem Arduino."""
     global arduino
-    arduino = serial.Serial(PORT, 9600, timeout=5)
+    arduino = serial.Serial(port=port, baudrate=9600, timeout=5)
     # auf den Arduino warten
     time.sleep(wait)
     arduino.flush()
 
 
 def turn_on_laser():
+    """Sendet eine Eins als Byte zum Arduino, welche ein Anschalten der Laser signalisiert."""
     arduino.write(b"1\n")
     time.sleep(ARDUINO_DELAY / 1000.0)
 
 
 def turn_off_laser():
+    """Sendet eine Null als Byte zum Arduino, welche ein Ausschalten der Laser signalisiert."""
     arduino.write(b"0\n")
     time.sleep(ARDUINO_DELAY / 1000.0)
 
 
-# modefied, von https://codingmess.blogspot.com/2009/05/conversion-of-wavelength-in-nanometers.html
-def wav2RGB(wavelength):
+# modified, von https://codingmess.blogspot.com/2009/05/conversion-of-wavelength-in-nanometers.html
+def convert_wav_to_rgb(wavelength):
+    """Konvertiert eine Farbe, die als Wellenlänge in Nanometern kodiert ist, zu RGB."""
     # print(np.array(wavelength).shape)
     w = int(wavelength)
 
-    # colour
+    # color
     if w >= 380 and w < 440:
-        R = -(w - 440.0) / (440.0 - 350.0)
-        G = 0.0
-        B = 1.0
+        r = -(w - 440.0) / (440.0 - 350.0)
+        g = 0.0
+        b = 1.0
     elif w >= 440 and w < 490:
-        R = 0.0
-        G = (w - 440.0) / (490.0 - 440.0)
-        B = 1.0
+        r = 0.0
+        g = (w - 440.0) / (490.0 - 440.0)
+        b = 1.0
     elif w >= 490 and w < 510:
-        R = 0.0
-        G = 1.0
-        B = -(w - 510.0) / (510.0 - 490.0)
+        r = 0.0
+        g = 1.0
+        b = -(w - 510.0) / (510.0 - 490.0)
     elif w >= 510 and w < 580:
-        R = (w - 510.0) / (580.0 - 510.0)
-        G = 1.0
-        B = 0.0
+        r = (w - 510.0) / (580.0 - 510.0)
+        g = 1.0
+        b = 0.0
     elif w >= 580 and w < 645:
-        R = 1.0
-        G = -(w - 645.0) / (645.0 - 580.0)
-        B = 0.0
+        r = 1.0
+        g = -(w - 645.0) / (645.0 - 580.0)
+        b = 0.0
     elif w >= 645 and w <= 780:
-        R = 1.0
-        G = 0.0
-        B = 0.0
+        r = 1.0
+        g = 0.0
+        b = 0.0
     else:
-        R = 255.0
-        G = 255.0
-        B = 255.0
-        return (int(R), int(G), int(B))
+        r = 255.0
+        g = 255.0
+        b = 255.0
+        return (int(r), int(g), int(b))
 
     # intensity correction
     if w >= 380 and w < 420:
-        SSS = 0.3 + 0.7 * (w - 350) / (420 - 350)
+        sss = 0.3 + 0.7 * (w - 350) / (420 - 350)
     elif w >= 420 and w <= 700:
-        SSS = 1.0
+        sss = 1.0
     elif w > 700 and w <= 780:
-        SSS = 0.3 + 0.7 * (780 - w) / (780 - 700)
+        sss = 0.3 + 0.7 * (780 - w) / (780 - 700)
     else:
-        SSS = 1 / 255.0
-    SSS *= 255
+        sss = 1 / 255.0
+    sss *= 255
 
-    return (int(SSS * R), int(SSS * G), int(SSS * B))
+    return (int(sss * r), int(sss * g), int(sss * b))
 
 
 def make_spectrum_image(width, height, wavelength, cache=True):
+    """Erstellt das Hintergrundbild eines Plots (den Regenbogen)."""
 
     if cache:
         try:
@@ -190,7 +206,7 @@ def make_spectrum_image(width, height, wavelength, cache=True):
 
     for x in range(width):
         for y in range(height):
-            image.putpixel((x, y), wav2RGB(wavelength[x]))  #  + (200,)
+            image.putpixel((x, y), convert_wav_to_rgb(wavelength[x]))  #  + (200,)
 
     if cache:
         image.save(
@@ -203,6 +219,7 @@ def make_spectrum_image(width, height, wavelength, cache=True):
 
 
 def spectrometer_setup():
+    """Verbindet sich mit dem Spektrometer."""
 
     global spectrometer, wav
 
@@ -212,8 +229,14 @@ def spectrometer_setup():
         2048,
     )
 
-    print(spectrometer)
-    print("\nDevice ID: ", sn.getDeviceId(spectrometer))
+    # es gibt 2048 Elemente: Jeder der 864 Wellenlängen ist immer mit zwei bis drei Nachkommastellen vertreten
+    # print(wav[0], wav[-1]) -> 285.24 1149.4808101739814
+    # for i in wav:
+    #     print(i)
+    # print(len(wav))
+
+    # print(spectrometer)
+    # print("\nDevice ID: ", sn.getDeviceId(spectrometer))
 
     sn.ext_trig(spectrometer, True)
     # True ignoriert die ersten Messdaten, da diese ungenau sein können (durch Änderung der Integrationszeit)
@@ -221,6 +244,7 @@ def spectrometer_setup():
 
 
 def get_data():
+    """Liest die Daten des Spektrometers aus."""
     # start_time = time.time()
     # var = sn.array_spectrum(spectrometer, wav)
     # print((time.time() - start_time) * 1000)
@@ -236,6 +260,7 @@ def plot_results(
     plotting_settings: list[PlottingSettings],
     verbose=True,
 ):
+    """Erstellt den Plot anhand der gemessenen Daten."""
 
     # [:]: nutze eine Kopie von plotting_settings zum Iterieren
     for setting in plotting_settings[:]:
@@ -311,8 +336,8 @@ def plot_results(
             mean = np.zeros([x_ax_len], dtype=float)
 
             for i in range(len(spectrometer_data)):
-                j = i + setting.intervall_start
-                if j >= setting.intervall_end:
+                j = i + setting.interval_start
+                if j >= setting.interval_end:
                     break
                 intensity = []
                 for k in range(len(spectrometer_data[j])):
@@ -329,13 +354,13 @@ def plot_results(
                 mean += spectrometer_data[j][setting.zoom_start : setting.zoom_end]
 
             print(
-                setting.intervall_end - setting.intervall_start
+                setting.interval_end - setting.interval_start
                 if setting.sliced()
                 else len(spectrometer_data)
             )
             print(setting.sliced())
             mean /= (
-                setting.intervall_end - setting.intervall_start
+                setting.interval_end - setting.interval_start
                 if setting.sliced()
                 else len(spectrometer_data)
             )
@@ -375,7 +400,7 @@ def plot_results(
 
         rate = metadata[REPETITIONS_INDEX]
         if setting.sliced():
-            rate = setting.intervall_end - setting.intervall_start
+            rate = setting.interval_end - setting.interval_start
 
         ax.scatter(
             wavelengths,
@@ -413,7 +438,7 @@ def plot_results(
     for setting in plotting_settings:
         if setting.sliced():
             title = "{0} bis {1} Laserschüsse {2}".format(
-                setting.intervall_start, setting.intervall_end, NAME
+                setting.interval_start, setting.interval_end, NAME
             )
         if setting.normalize_integrationtime:
             title += " Integrationszeit normalisiert"
@@ -447,6 +472,7 @@ def plot_results(
 
 
 def plot_to_image(fig):
+    """Konvertiert einen Matplotlib Plot zu einem PIL Image."""
     buf = io.BytesIO()
     fig.savefig(buf, dpi=300, bbox_inches="tight", format="jpg")  # Alpha entfernen
     buf.seek(0)
@@ -455,6 +481,7 @@ def plot_to_image(fig):
 
 
 def image_to_array(image):
+    """Konvertiert ein PIL Image zu einem Array."""
 
     width, height = image.size
     bytes_list = bytearray()
@@ -473,15 +500,16 @@ def image_to_array(image):
 
 
 def send_plot():
-    global sock
+    """ "Sendet den aktuellen Plot an das spezifizierte Socket."""
+    global SOCKET
 
     while True:
-        if sock is None:
+        if SOCKET is None:
             try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.connect((HOST, PORT))
+                SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                SOCKET.connect((HOST, PORT))
             except:
-                sock = None
+                SOCKET = None
                 continue
 
         live_plotting()
@@ -489,12 +517,12 @@ def send_plot():
         img = plot_to_image(live_fig)
         img.thumbnail((600, 500))
 
-        sock.sendto(
+        SOCKET.sendto(
             ("size {0} {1}\n".format(img.size[0], img.size[1])).encode("utf-8"),
             (HOST, PORT),
         )
         message = image_to_array(img)
-        sock.sendto(
+        SOCKET.sendto(
             base64.b64encode(zlib.compress(message)) + b"\n", (HOST, PORT)
         )  # .encode('utf-8')
 
@@ -507,23 +535,34 @@ plt.ylabel("Intensität in Counts")
 plt.grid(True)
 plt.title(NAME)
 
-scatter = live_ax.scatter([], [], label="Mittelwert von {0} Messungen".format(0), s=1)
+scatter = live_ax.scatter([], [], label="Mittelwert von {0} Messungen".format(0), s=5)
+
+past_measurement_index = -1
 
 
 def live_plotting(i=None):
-    if len(measurements) == 0:
+    """Plottet die aktuell gemessene Messung."""
+
+    global past_measurement_index
+
+    if (
+        len(measurements) == 0
+        or curr_measurement_index < 0
+        or past_measurement_index == curr_measurement_index
+    ):
         return
 
-    measurement = measurements[currMeasurementIndex]
+    measurement = measurements[curr_measurement_index]
 
     # die Daten im Scatter-Plot aktualisieren
     scatter.set_offsets(np.column_stack((wav, measurement)))
 
-    scatter.set_label("Spektrum von Messung {0}".format(currMeasurementIndex + 1))
+    scatter.set_label("Spektrum von Messung {0}".format(curr_measurement_index + 1))
 
     # den Wertebereich der Axen anpassen
     live_ax.set_xlim(wav[0], wav[-1])
-    live_ax.set_ylim(min(measurement), max(measurement))
+    # live_ax.set_ylim(min(measurement), max(measurement))
+    live_ax.set_ylim(0, 3000)
 
     live_ax.legend(
         loc="upper center",
@@ -532,7 +571,7 @@ def live_plotting(i=None):
         shadow=True,
         markerscale=4,
     )
-
+    past_measurement_index = curr_measurement_index
     return (scatter,)
 
 
@@ -581,7 +620,42 @@ def time_measurement(iter: int):
     )
 
 
+def suppressed_pause():
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning)
+        # UserWarning: Starting a Matplotlib GUI outside of the main thread will likely fail.
+        plt.pause(0.1)
+
+
+def start_gui_thread():
+
+    threading.Thread(
+        target=lambda: [suppressed_pause() for _ in iter(int, 1)],
+        daemon=True,  # Main-Thread soll nicht auf den Thread warten
+    ).start()
+
+    # threading.Thread(target=send_plot, daemon=True).start()
+    # plt.ioff()
+
+    # warten, bis der Thread gestartet ist
+    time.sleep(0.5)
+
+
 if __name__ == "__main__":
+
+    spectrometer_setup()
+    measurements = np.zeros([100, 2048], dtype=float)
+    start_gui_thread()
+
+    try:
+        while True:
+            next_measurement_index = (curr_measurement_index + 1) % len(measurements)
+            measurements[next_measurement_index] = get_data()
+            time.sleep(MEASUREMENT_DELAY / 1000.0)
+            curr_measurement_index = next_measurement_index
+    except KeyboardInterrupt:
+        sn.reset(spectrometer)
+        exit()
 
     """
     ## alle Messungen plotten
@@ -700,18 +774,8 @@ if __name__ == "__main__":
     # minimal schneller als jedes Mal list.append()
     measurements = np.zeros([REPETITIONS, 2048], dtype=float)
 
-    threading.Thread(
-        target=(
-            lambda: [plt.pause(0.1) for _ in iter(int, 1)]
-        ),  # endlos lange den Plot aktualisieren
-        daemon=True,  # der Python-Interpreter soll nicht auf den Thread warten, bevor er sich selbst beendet
-    ).start()
+    start_gui_thread()
 
-    # threading.Thread(target=send_plot, daemon=True).start()
-    # plt.ioff()
-
-    # warten, bis der Thread gestartet ist
-    time.sleep(0.5)
     print("\nrepetitions:")
 
     seconds = time.time()
@@ -723,8 +787,8 @@ if __name__ == "__main__":
             sys.stdout.write("\r")
             sys.stdout.write(" " + str(i))
             sys.stdout.flush()
+            curr_measurement_index = i
             # print(i)
-            currMeasurementIndex += 1
     else:
         for i in range(REPETITIONS):
             turn_on_laser()
@@ -735,8 +799,8 @@ if __name__ == "__main__":
             sys.stdout.write("\r")
             sys.stdout.write(" " + str(i))
             sys.stdout.flush()
+            curr_measurement_index = i
             # print(i)
-            currMeasurementIndex += 1
             if time.time() - seconds > TIMEOUT:
                 print("\nreached timeout!")
                 break
