@@ -1,28 +1,6 @@
-# das noch mal mit prints überprüfen
-# try:
-#     from pylablib.devices import NKT
-# except ModuleNotFoundError:
-#     from VirtualNKT import NKT
-
-from pylablib.devices import NKT
-
-# from VirtualNKT import NKT
-
-
 class LaserController:
 
     def __init__(self, laser_path):
-        """
-        Initializes the LaserController with a laser instance.
-        :param laser: An instance providing `ib_set_reg` and `ib_get_reg` methods.
-        """
-        self.laser = NKT.GenericInterbusDevice(laser_path)
-        # try:
-        #     self.laser = NKT.GenericInterbusDevice(laser_path)
-        # except Exception:  # InterbusBackendError:
-        #     from virtual_nkt import NKT
-        #     self.laser = NKT.GenericInterbusDevice(laser_path)
-        #     print("using virtual NKT LASER")
 
         self.laser_register = 1
         # 1/Faktor zur Basiseinheit
@@ -51,6 +29,19 @@ class LaserController:
             "user_area": {"addr": 0x8D, "type": "ascii", "mode": "w"},
             "voltage": {"addr": 0x1A, "type": "u16", "factor": 1000, "mode": "r"},
         }
+
+        from pylablib.devices.NKT import InterbusBackendError  # pylint: disable=E0401
+
+        try:
+            from pylablib.devices import NKT  # type: ignore
+
+            self.laser = NKT.GenericInterbusDevice(laser_path)
+            self.get_register("temperature")  # fails wenn der Laser aus ist
+        except InterbusBackendError:
+            print("using virttual NKT LASER")
+            from VirtualNKT import NKT
+
+            self.laser = NKT.GenericInterbusDevice(laser_path)
 
     def set_register(self, name, value):
 
