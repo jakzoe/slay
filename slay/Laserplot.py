@@ -391,7 +391,7 @@ class Laserplot:
         #         print(f"the dir {setting.file_path} ist empty!")
         #         plotting_settings.remove(setting)
 
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(layout="constrained")
         fig_colorful, ax_colorful = plt.subplots()
 
         # plt.grid(True)
