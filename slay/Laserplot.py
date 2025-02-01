@@ -27,7 +27,7 @@ import warnings
 import matplotlib.animation as animation
 import sys
 import time
-from scipy.signal import savgol_filter
+import scipy
 import threading
 
 from math import ceil, floor
@@ -152,7 +152,7 @@ class Laserplot:
     ):
 
         def smooth_curve(array):
-            return savgol_filter(array, window_length=50, polyorder=5)
+            return scipy.signal.savgol_filter(array, window_length=50, polyorder=5)
 
         line_data = (
             smooth_curve(settings.y_data)
@@ -239,6 +239,73 @@ class Laserplot:
                 # alpha=0.1,
             )
 
+        if settings.time_plot:
+
+            # den konstanten Teil am Ende wegschneiden (der eine sehr geringe Steigung hat)
+            index = len(settings.y_data)
+            step_size = ceil(len(settings.y_data) / 10)
+            for i in range(len(settings.y_data) - step_size - 1, 0, -step_size):
+                m = abs(
+                    np.polyfit(
+                        settings.x_data[i : i + step_size],
+                        settings.y_data[i : i + step_size],
+                        deg=1,
+                    )[0]
+                )
+                if np.rad2deg(np.arctan(m)) > 25:
+                    index = i
+                    break
+
+            cut_data_x = settings.x_data[:index]
+            cut_data_y = settings.y_data[:index]
+            linear_curve = np.polyfit(
+                cut_data_x,
+                cut_data_y,
+                deg=1,
+            )
+            m = linear_curve[0]
+            n = linear_curve[1]
+            x_fitted = np.array([cut_data_x[0], cut_data_x[-1]])
+            y_fitted = m * x_fitted + n
+            settings.ax.plot(
+                x_fitted,
+                y_fitted,
+                color="red",
+                label=r"$\text{{g}}(x) \approx {:.2f}x+{:.0f}$".format(m, n),
+            )
+            # verhindern, dass das Label gar nicht erst erstellt wird (siehe if weiter unten)
+            settings.label = " " if settings.label is None else settings.label
+
+            parameter = scipy.optimize.curve_fit(
+                lambda t, a, b, c: a * np.exp(b * t) + c,
+                settings.x_data,
+                settings.y_data,
+                # a ist ungefähr [0] - c, c ungefähr [-1]
+                p0=(
+                    settings.y_data[0] - settings.y_data[-1],
+                    -0.0015,  # bisschen rumprobiert
+                    settings.y_data[-1],
+                ),
+                # maxfev=20_000,
+            )[0]
+            x_fitted = np.linspace(
+                np.min(settings.x_data), np.max(settings.x_data), 1000
+            )
+            a = parameter[0]
+            b = parameter[1]
+            c = parameter[2]
+            y_fitted_expo = a * np.exp(b * x_fitted) + c
+            b_format = f"{b:.2e}".split("e")
+
+            settings.ax.plot(
+                x_fitted,
+                y_fitted_expo,
+                color="orange",
+                label=r"$\text{{exp}}(x) \approx {:.0f} e^{{ {} \cdot 10^{{{:.0f}}} t}} + {:.0f}$".format(
+                    a, float(b_format[0]), float(b_format[1]), c
+                ),
+            )
+
         # die Daten im Scatter-Plot aktualisieren
         # self.scatter.set_offsets(np.column_stack((wav, measurement)))
         # self.scatter.set_label(label)
@@ -268,7 +335,7 @@ class Laserplot:
             settings.ax.xaxis.set_major_locator(MultipleLocator(100))
         settings.ax.tick_params(axis="both", labelsize=8)
 
-        # weniger Weiß an den Rändern
+        # weniger Weiß an den Rändern. Überschreibt aber constrained layout
         # fig.tight_layout()
 
         if settings.label is not None:
@@ -441,7 +508,7 @@ class Laserplot:
                 ]
                 / normalize_integrationtime_factor
                 / normalize_power
-            )
+            ).flatten()
 
             # # jede Wiederholung der Messung
             # for i in range(len(spectrometer_data)):
