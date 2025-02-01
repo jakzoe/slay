@@ -31,6 +31,8 @@ class PlottingSettings:
         self.zoom_start_wav = zoom_start
         self.zoom_end_wav = zoom_end
 
+        self.single_wav = self.zoom_start_wav + 1 == self.zoom_end_wav
+
         self.zoom_start = 0
         self.zoom_end = sys.maxsize
 

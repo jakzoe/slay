@@ -18,27 +18,27 @@ except IndexError:
 if __name__ == "__main__":
 
     measurement_settings = MeasurementSettings(
-        UNIQUE=True,
+        UNIQUE=False,
         TYPE="Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Nur_Bodensatz_Also_Toll",  # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Blub # Neutral_Mit_Spiegel # Mittel_Bier_Indirekt # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Blub # Radieschen_Direkt_Unfokussiert # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Nur_Bodensatz_Also_Toll
         FENSTER_KUEVETTE=2,
         TIMEOUT=1000000,  # disable
         WATCHDOG_GRACE=200,
         FUELLL_MENGE=0.810,  # in ml
         specto=MeasurementSettings.SpectoSettings(
-            INTTIME=1_000,  # int(1000 * 60 * 0.5),
+            INTTIME=10,  # int(1000 * 60 * 0.5),
             SCAN_AVG=1,
             SMOOTH=0,
             XTIMING=3,  # int(1000 * 60 * 0.3)
         ),
         laser=MeasurementSettings.LaserSettings(
-            REPETITIONS=250,
+            REPETITIONS=25000,
             MEASUREMENT_DELAY=3,
             IRRADITION_TIME=3,
             ARDUINO_DELAY=3,
-            INTENSITY_NKT=0.2,  # in Prozent
-            INTENSITY_405=150,  # kaum noch sichtbar unter 60
-            NUM_PULSES_445=100,  # 1234 ist kein PWM
-            PULSE_DELAY_445=2,
+            INTENSITY_NKT=1,  # in Prozent
+            INTENSITY_405=0,  # kaum noch sichtbar unter 60
+            NUM_PULSES_445=50,  # 1234 ist kein PWM
+            PULSE_DELAY_445=10,
             ND_NKT=0,
             ND_405=0,
             ND_445=0,

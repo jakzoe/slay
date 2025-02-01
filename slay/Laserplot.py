@@ -52,6 +52,7 @@ class Laserplot:
             scatter=True,
             marker_size=4,
             time_plot=False,
+            single_wav=False,
         ):
             self.fig = fig
             self.ax = ax
@@ -66,6 +67,7 @@ class Laserplot:
             self.scatter = scatter
             self.marker_size = marker_size
             self.time_plot = time_plot
+            self.single_wav = single_wav
 
     def __init__(self):
         self.clim = (350, 780)
@@ -239,7 +241,7 @@ class Laserplot:
                 # alpha=0.1,
             )
 
-        if settings.time_plot:
+        if settings.single_wav:  # settings.time_plot:
 
             # den konstanten Teil am Ende wegschneiden (der eine sehr geringe Steigung hat)
             index = len(settings.y_data)
@@ -271,6 +273,7 @@ class Laserplot:
                 x_fitted,
                 y_fitted,
                 color="red",
+                linewidth=settings.marker_size,
                 label=r"$\text{{g}}(x) \approx {:.2f}x+{:.0f}$".format(m, n),
             )
             # verhindern, dass das Label gar nicht erst erstellt wird (siehe if weiter unten)
@@ -286,7 +289,7 @@ class Laserplot:
                     -0.0015,  # bisschen rumprobiert
                     settings.y_data[-1],
                 ),
-                # maxfev=20_000,
+                maxfev=20_000,
             )[0]
             x_fitted = np.linspace(
                 np.min(settings.x_data), np.max(settings.x_data), 1000
@@ -301,6 +304,7 @@ class Laserplot:
                 x_fitted,
                 y_fitted_expo,
                 color="orange",
+                linewidth=settings.marker_size,
                 label=r"$\text{{exp}}(x) \approx {:.0f} e^{{ {} \cdot 10^{{{:.0f}}} t}} + {:.0f}$".format(
                     a, float(b_format[0]), float(b_format[1]), c
                 ),
@@ -356,7 +360,8 @@ class Laserplot:
                     frameon=True,
                     fancybox=True,
                     # shadow=True,
-                    markerscale=4,
+                    markerscale=2,
+                    # framealpha=0.3,
                 )
 
     def plot_results(
@@ -406,6 +411,7 @@ class Laserplot:
 
         # ob mehrere Graphen geplottet werden
         multiple_plots = len(plotting_settings) != 1
+        time_plot = not multiple_plots and plotting_settings[0].single_wav
         for i, setting in enumerate(plotting_settings):
 
             # file_list = [
@@ -443,14 +449,13 @@ class Laserplot:
                 else (np.abs(time_stamps - setting.interval_end_time)).argmin()
             )
 
-            single_wav = setting.zoom_start_wav + 1 == setting.zoom_end_wav
             # von Wellenlänge in Index umrechnen
             setting.zoom_start = (
                 0
                 if setting.zoom_start_wav == 0
                 else (np.abs(x_data - setting.zoom_start_wav)).argmin()
             )
-            if single_wav:
+            if setting.single_wav:
                 setting.zoom_end = setting.zoom_start + 1
             else:
                 setting.zoom_end = (
@@ -460,11 +465,11 @@ class Laserplot:
                 )
 
             # nur eine Wellenlänge über die Zeit plotten
-            if single_wav:
+            if setting.single_wav:
                 x_data = (loaded_array["arr_2"] - loaded_array["arr_2"][0])[
                     setting.interval_start : setting.interval_end
                 ]  # Zeit von UNIX time in delta Time in Minuten umrechnen
-                print(f"Zeitlänge der Messung: {x_data[-1]}s")
+                print(f"Zeitlänge der Messung: {x_data[-1]:.2f} s")
                 x_ax_len = len(x_data)
             else:
                 assert len(x_data) == 2048
@@ -508,7 +513,9 @@ class Laserplot:
                 ]
                 / normalize_integrationtime_factor
                 / normalize_power
-            ).flatten()
+            )
+            if setting.single_wav:
+                extracted_data = extracted_data.flatten()
 
             # # jede Wiederholung der Messung
             # for i in range(len(spectrometer_data)):
@@ -530,7 +537,7 @@ class Laserplot:
             #     extracted_data[j] = np.array(intensities)
             del spectrometer_data
 
-            if single_wav:
+            if setting.single_wav:
                 y_data = extracted_data
                 standard_deviation = None
             else:
@@ -550,7 +557,10 @@ class Laserplot:
 
             color = colors[i] if setting.color is None else setting.color
 
-            print(f"max: {np.max(y_data)} at {x_data[np.argmax(y_data)]}")
+            # blauer Text (\033[ ist Escape sequence start, 34m Blue color code, 0m color reset)
+            print(
+                f"\033[34mmax: {np.max(y_data):.2f} at {x_data[np.argmax(y_data)]:.2f}\033[0m"
+            )
 
             def round_left(x):
                 return (
@@ -575,23 +585,20 @@ class Laserplot:
                 y_data=y_data,
                 label=(
                     f"{round_left(setting.interval_start_time)} s - {round_right(setting.interval_end_time)} s"
-                    if setting.sliced and not single_wav
+                    if setting.sliced and not setting.single_wav
                     else None
                 ),
                 smooth=setting.smooth,
                 color=color,
                 style=setting.line_style,
                 std=standard_deviation,
-                time_plot=(
-                    not multiple_plots
-                    and plotting_settings[0].zoom_start + 1
-                    == plotting_settings[0].zoom_end
-                ),
                 scatter=setting.scatter,
+                time_plot=time_plot,
+                single_wav=setting.single_wav,
             )
             self.data_to_plot(graphSettings)
 
-            if not multiple_plots and not single_wav:
+            if not multiple_plots and not setting.single_wav:
                 graphSettings.fig = fig_colorful
                 graphSettings.ax = ax_colorful
                 graphSettings.rainbow = True
@@ -608,8 +615,8 @@ class Laserplot:
                     if tle_set.sliced
                     else ""
                 )
-                + (f"_{tle_set.zoom_start_wav}" if single_wav else "")
-                # + ("_sw" if single_wav else "")  # single wav (wird aber durch den Interval schon angegeben)
+                + (f"_{tle_set.zoom_start_wav}" if setting.single_wav else "")
+                # + ("_sw" if setting.single_wav else "")  # single wav (wird aber durch den Interval schon angegeben)
                 + (
                     "_in" if tle_set.normalize_integrationtime else ""
                 )  # integration normalized
@@ -648,7 +655,7 @@ class Laserplot:
         figures = [fig]
         paths = [root_plot_dir + "neutral/"]
         suffixes = [""]
-        if not multiple_plots and not single_wav:
+        if not multiple_plots and not setting.single_wav:
             figures.append(fig_colorful)
             paths.append(root_plot_dir + "colorful/")
             paths.append("_colorful")
