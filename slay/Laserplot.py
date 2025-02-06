@@ -77,13 +77,6 @@ class Laserplot:
             self.single_wav = single_wav
 
     def __init__(self):
-        self.clim = (350, 780)
-        norm = plt.Normalize(*self.clim)
-        wl = np.arange(self.clim[0], self.clim[1] + 1, 2)
-        colorlist = list(zip(norm(wl), [self.wavelength_to_rgb(w) for w in wl]))
-        self.spectralmap = matplotlib.colors.LinearSegmentedColormap.from_list(
-            "spectrum", colorlist
-        )
 
         self.live_fig, self.live_ax = plt.subplots()
         self.live_ax.set_xlabel("Wellenlänge (nm)")
@@ -103,7 +96,8 @@ class Laserplot:
         plt.show()
         self.stop_event = threading.Event()
 
-    def wavelength_to_rgb(self, wavelength, gamma=0.8):
+    @staticmethod
+    def wavelength_to_rgb(wavelength, gamma=0.8):
         """taken from http://www.noah.org/wiki/Wavelength_to_RGB_in_Python
         This converts a given wavelength of light to an
         approximate RGB color value. The wavelength must be given
@@ -155,7 +149,8 @@ class Laserplot:
             b = 0.0
         return (r, g, b, a)
 
-    def legend_collides(self, ax, px, py):
+    @staticmethod
+    def legend_collides(ax, px, py):
 
         bbox_legend = ax.get_legend().get_window_extent()
         # in Datenkoordinaten umrechnen
@@ -188,8 +183,8 @@ class Laserplot:
         #     #     return True
         # return False
 
+    @staticmethod
     def data_to_plot(
-        self,
         settings: GraphSettings,
     ):
 
@@ -212,8 +207,17 @@ class Laserplot:
                 np.max(line_data),
             )
 
+            clim = (350, 780)
+            norm = plt.Normalize(*clim)
+            wl = np.arange(clim[0], clim[1] + 1, 2)
+            colorlist = list(
+                zip(norm(wl), [Laserplot.wavelength_to_rgb(w) for w in wl])
+            )
+            spectralmap = matplotlib.colors.LinearSegmentedColormap.from_list(
+                "spectrum", colorlist
+            )
             settings.ax.imshow(
-                X, clim=self.clim, extent=extent, cmap=self.spectralmap, aspect="auto"
+                X, clim=clim, extent=extent, cmap=spectralmap, aspect="auto"
             )
             settings.ax.fill_between(
                 settings.x_data,
@@ -402,7 +406,7 @@ class Laserplot:
             settings.ax.legend(**options)
             settings.fig.canvas.draw()
 
-            if self.legend_collides(
+            if Laserplot.legend_collides(
                 settings.ax,
                 settings.x_data,
                 settings.y_data,
@@ -445,8 +449,8 @@ class Laserplot:
                     settings.ax.legend(**options)
                     settings.fig.canvas.draw()
 
+    @staticmethod
     def plot_results(
-        self,
         plotting_settings: list[PlottingSettings],
         measurement_settings: MeasurementSettings,
         colors=None,
@@ -661,7 +665,7 @@ class Laserplot:
                     else round(x)
                 )
 
-            graphSettings = self.GraphSettings(
+            graphSettings = Laserplot.GraphSettings(
                 fig=fig,
                 ax=ax,
                 x_data=x_data,
@@ -679,7 +683,7 @@ class Laserplot:
                 time_plot=time_plot,
                 single_wav=setting.single_wav,
             )
-            self.data_to_plot(graphSettings)
+            Laserplot.data_to_plot(graphSettings)
 
             if not multiple_plots and not setting.single_wav:
                 if fig_colorful is None and ax_colorful is None:
@@ -690,7 +694,7 @@ class Laserplot:
                 graphSettings.scatter = False
                 graphSettings.std = None
 
-                self.data_to_plot(graphSettings)
+                Laserplot.data_to_plot(graphSettings)
 
         titles = [
             (
