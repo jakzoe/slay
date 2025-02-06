@@ -1,34 +1,153 @@
 from Laserplot import Laserplot
 from PlottingSettings import PlottingSettings
 from MeasurementSettings import MeasurementSettings
-import os
+import os, sys, io
+import time
 import shutil
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
+
+delete_old_pictures = True
+# um schnell bestimmtes zu exkludieren
+plot_general = True
+plot_fluo = True
+plot_time_slices = True
+
+# nur bestimmtes plotten. Leer ist disable (alles plotten). Enthält Keyword, welches in dem Namen sein muss.
+plot_list = [
+    # "Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Mit_Absatz_Aber_Also_Doof"
+]  # ["Bodensatz"]
+blacklist = False  # black- oder whitelist
+
+
+def make_plots(path, name):
+
+    # damit nicht alles durcheinander ist (wegen multiprocessing)
+    original_stdout = sys.stdout
+    sys.stdout = io.StringIO()
+
+    # grüner Text (\033[ ist Escape sequence start, 32m Green color code, 4m underline, 0m color reset)
+    print(f"{path}:")
+    print("\033[32m\033[4m" + name + "\033[0m")
+
+    p_settings = []
+
+    m_settings = MeasurementSettings.from_json(os.path.join(path, name + ".json"))
+
+    # Generellen Durchschnitt plotten
+    if plot_general:
+        p_settings.append([PlottingSettings(path, name, smooth=True)])
+
+    # Fluoreszenz-Peak plotten (ca. zwischen 720 und 740 nm bei Chlorophyll)
+    if plot_fluo:
+        p_settings.extend(
+            (
+                [
+                    PlottingSettings(
+                        path,
+                        name,
+                        smooth=True,
+                        single_wav=730,
+                        scatter=True,
+                    )
+                ],
+                [
+                    PlottingSettings(
+                        path,
+                        name,
+                        smooth=True,
+                        single_wav=750,
+                        scatter=True,
+                    )
+                ],
+                [
+                    PlottingSettings(
+                        path,
+                        name,
+                        smooth=True,
+                        single_wav=740,
+                        scatter=True,
+                    )
+                ],
+            )
+        )
+
+    # # einzelne Zeitabschnitte plotten
+    if plot_time_slices:
+        p_settings.append(
+            [
+                PlottingSettings(
+                    path,
+                    name,
+                    smooth=True,
+                    interval_start=0,
+                    interval_end=1 / 3,
+                    scatter=False,
+                    line_style="-",
+                    color="black",
+                ),
+                PlottingSettings(
+                    path,
+                    name,
+                    smooth=True,
+                    interval_start=1 / 3,
+                    interval_end=2 / 3,
+                    line_style="--",
+                    color="red",
+                ),
+                PlottingSettings(
+                    path,
+                    name,
+                    smooth=True,
+                    interval_start=2 / 3,
+                    interval_end=3 / 3,
+                    line_style=":",
+                    color="blue",
+                ),
+            ]
+        )
+
+    for p in p_settings:
+        Laserplot.plot_results(p, m_settings, show_plots=False)
+
+    sys.stdout.flush()
+    output = sys.stdout.getvalue()
+    sys.stdout = original_stdout
+    print(output)
+
 
 if __name__ == "__main__":
 
-    delte_old_pictures = True
-    # um schnell bestimmtes zu exkludieren
-    plot_general = True
-    plot_fluo = True
-    plot_time_slices = True
+    # path = r"messungen/Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Mit_Absatz_Aber_Also_Doof/Kontinuierlich/"
+    # name = r"2025-01-26 20_39_36.791213"
+    # m_settings = MeasurementSettings.from_json(os.path.join(path, name + ".json"))
 
-    # nur bestimmtes plotten. Leer ist disable (alles plotten). Enthält Keyword, welches in dem Namen sein muss.
-    plot_list = []  # ["Bodensatz"]
-    blacklist = False  # black- oder whitelist
+    # p = [
+    #     PlottingSettings(
+    #         path,
+    #         name,
+    #         smooth=True,
+    #         scatter=True,
+    #     )
+    # ]
+    # Laserplot().plot_results(p, m_settings, show_plots=False)
+
+    # exit()
 
     # die ganzen Symblinks löschen
-    if delte_old_pictures:
+    if delete_old_pictures:
         try:
             shutil.rmtree("plots/")
         except FileNotFoundError:
             print("plots dir was already deleted")
 
-    plot = Laserplot()
     paths = []
     root = "messungen/"
     for dir in os.listdir(root):
         for subdir in os.listdir(os.path.join(root, dir)):
             paths.append(os.path.join(root, dir, subdir))
+
+    tasks = []
 
     for path in paths:
         # ob das Element in der white/blacklist ist
@@ -38,15 +157,13 @@ if __name__ == "__main__":
         ):
             continue
 
-        print(path)
-
         names = [
             os.path.splitext(f)[0]
             for f in os.listdir(path)
             if (f.endswith((".npz")) and "overwrite-messung" not in f)
         ]
 
-        if delte_old_pictures:
+        if delete_old_pictures:
             pic_names = [
                 os.path.splitext(f)[0] for f in os.listdir(path) if f.endswith((".png"))
             ]
@@ -54,91 +171,28 @@ if __name__ == "__main__":
                 os.remove(os.path.join(path, pic_name + ".png"))
 
         for name in names:
+            tasks.append((path, name))
 
-            # grüner Text (\033[ ist Escape sequence start, 32m Green color code, 4m underline, 0m color reset)
-            print("\033[32m\033[4m" + name + "\033[0m")
+    # lambda geht nicht...
+    def worker(args):
+        return make_plots(*args)
 
-            p_settings = []
+    # print(f"Max processes: {os.cpu_count()}")
+    max_workers = None  # None to disable
+    start_time = time.time()
 
-            m_settings = MeasurementSettings.from_json(
-                os.path.join(path, name + ".json")
-            )
+    try:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            executor.map(worker, tasks)
+    except KeyboardInterrupt:
+        multiprocessing.active_children()
+        for p in multiprocessing.active_children():
+            p.terminate()
+        exit()
 
-            # Generellen Durchschnitt plotten
-            if plot_general:
-                p_settings.append([PlottingSettings(path, name, smooth=True)])
+    print(f"took: {time.time() - start_time:.2f} s")
 
-            # Fluoreszenz-Peak plotten (zwischen 720 und 740 nm)
-            if plot_fluo:
-                p_settings.extend(
-                    (
-                        [
-                            PlottingSettings(
-                                path,
-                                name,
-                                smooth=True,
-                                zoom_start=730,
-                                zoom_end=731,
-                                scatter=True,
-                            )
-                        ],
-                        [
-                            PlottingSettings(
-                                path,
-                                name,
-                                smooth=True,
-                                zoom_start=750,
-                                zoom_end=751,
-                                scatter=True,
-                            )
-                        ],
-                        [
-                            PlottingSettings(
-                                path,
-                                name,
-                                smooth=True,
-                                zoom_start=740,
-                                zoom_end=741,
-                                scatter=True,
-                            )
-                        ],
-                    )
-                )
-
-            # # einzelne Zeitabschnitte plotten
-            if plot_time_slices:
-                p_settings.append(
-                    [
-                        PlottingSettings(
-                            path,
-                            name,
-                            smooth=True,
-                            interval_start=0,
-                            interval_end=1 / 3,
-                            scatter=False,
-                            line_style="-",
-                            color="black",
-                        ),
-                        PlottingSettings(
-                            path,
-                            name,
-                            smooth=True,
-                            interval_start=1 / 3,
-                            interval_end=2 / 3,
-                            line_style="--",
-                            color="red",
-                        ),
-                        PlottingSettings(
-                            path,
-                            name,
-                            smooth=True,
-                            interval_start=2 / 3,
-                            interval_end=3 / 3,
-                            line_style=":",
-                            color="blue",
-                        ),
-                    ]
-                )
-
-            for p in p_settings:
-                plot.plot_results(p, m_settings, show_plots=False)
+    # 12: took: 44.83 s
+    # 8: took: 49.54 s
+    # 4: took: 83.07 s
+    # 1: took: 200.00 s
