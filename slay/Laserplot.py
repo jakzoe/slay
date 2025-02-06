@@ -17,6 +17,13 @@ import matplotlib.colors
 import scienceplots
 
 plt.style.use(["science"])
+# plt.rcParams["figure.figsize"] = [6.4, 4.8] # default, überschrieben von scienceplots
+
+# wiki: 'constrained': The constrained layout solver adjusts Axes sizes to avoid overlapping Axes decorations.
+# warum auch immer das nicht default ist
+# da eine bestimmte figsize gespeichert wrid (zuvor definiert, hier von scienceplots. Defaul ist 6.4, 4.8)
+# wird es dennoch zumindest zu einem overlapping label kommen. Dieses wird im Fall der Fälle auomatisch unter den Plot "verschoben" (siehe legend_collides)
+plt.rcParams["figure.constrained_layout.use"] = True
 USE_GRID = False
 
 import os
@@ -148,6 +155,39 @@ class Laserplot:
             b = 0.0
         return (r, g, b, a)
 
+    def legend_collides(self, ax, px, py):
+
+        bbox_legend = ax.get_legend().get_window_extent()
+        # in Datenkoordinaten umrechnen
+        x0, y0 = ax.transData.inverted().transform((bbox_legend.x0, bbox_legend.y0))
+        x1, y1 = ax.transData.inverted().transform((bbox_legend.x1, bbox_legend.y1))
+        for x, y in zip(px, py):
+            if x >= x0 and x <= x1 and y >= y0 and y <= y1:
+                return True
+
+        return False
+
+        # def is_overlapping(x0a, y0a, x1a, y1a, x0b, y0b, x1b, y1b):
+        #     return not (x1a < x0b or x1b < x0a or y1a < y0b or y1b < y0a)
+
+        # bbox_legend = ax.get_legend().get_window_extent()
+        # # x0b, y0b = ax.transData.inverted().transform((bbox_legend.x0, bbox_legend.y0))
+        # # x1b, y1b = ax.transData.inverted().transform((bbox_legend.x1, bbox_legend.y1))
+
+        # for artist in ax.get_children():
+        #     if isinstance(artist, type(ax.get_legend())):
+        #         continue
+        #     print(artist)
+        #     bbox = artist.get_window_extent()
+        #     # x0a, y0a = ax.transData.inverted().transform((bbox.x0, bbox.y0))
+        #     # x1a, y1a = ax.transData.inverted().transform((bbox.x1, bbox.y1))
+
+        #     if matplotlib.transforms.Bbox.intersection(bbox, bbox_legend) is not None:
+        #         return True
+        #     # if is_overlapping(x0a, y0a, x1a, y1a, x0b, y0b, x1b, y1b):
+        #     #     return True
+        # return False
+
     def data_to_plot(
         self,
         settings: GraphSettings,
@@ -274,7 +314,9 @@ class Laserplot:
                 y_fitted,
                 color="red",
                 linewidth=settings.marker_size,
-                label=r"$\text{{g}}(x) \approx {:.2f}x+{:.0f}$".format(m, n),
+                label=r"$\text{{g}}(x) \approx {:.2f}x{}{:.0f}$".format(
+                    m, "" if n < 0 else "+", n
+                ),
             )
             # verhindern, dass das Label gar nicht erst erstellt wird (siehe if weiter unten)
             settings.label = " " if settings.label is None else settings.label
@@ -305,8 +347,8 @@ class Laserplot:
                 y_fitted_expo,
                 color="orange",
                 linewidth=settings.marker_size,
-                label=r"$\text{{exp}}(x) \approx {:.0f} e^{{ {} \cdot 10^{{{:.0f}}} t}} + {:.0f}$".format(
-                    a, float(b_format[0]), float(b_format[1]), c
+                label=r"$\text{{exp}}(x) \approx {:.0f} e^{{ {} \cdot 10^{{{:.0f}}} t}} {}{:.0f}$".format(
+                    a, float(b_format[0]), float(b_format[1]), "" if c < 0 else "+", c
                 ),
             )
 
@@ -324,13 +366,17 @@ class Laserplot:
         settings.ax.set_ylabel("Intensität (Counts)")
 
         # den Wertebereich der Axen anpassen (mit Puffer)
+        puffer = 0  # 10
         if not settings.time_plot:
-            settings.ax.set_xlim(settings.x_data[0] - 10, settings.x_data[-1] + 10)
+            settings.ax.set_xlim(
+                settings.x_data[0] - puffer, settings.x_data[-1] + puffer
+            )
         # so machen, dass immer noch das Label oben hinpasst
         settings.ax.set_ylim(
             max(0, min(line_data), settings.ax.get_ylim()[0]),
             max(max(line_data), 2000, settings.ax.get_ylim()[1]),
         )  # * 1.05
+
         # ax.set_ylim(1500, max(measurement))
         # ax.set_xlim(350, 600)
 
@@ -343,11 +389,10 @@ class Laserplot:
         # fig.tight_layout()
 
         if settings.label is not None:
+            # https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.legend.html#matplotlib.axes.Axes.legend
             if USE_GRID:
 
                 settings.ax.legend(
-                    # loc="upper center",
-                    # bbox_to_anchor=(0.5, -0.05),
                     frameon=True,
                     fancybox=True,
                     shadow=True,
@@ -355,14 +400,40 @@ class Laserplot:
                 )
             else:
                 settings.ax.legend(
-                    # loc="upper center",
-                    # bbox_to_anchor=(0.5, -0.05),
                     frameon=True,
                     fancybox=True,
-                    # shadow=True,
+                    shadow=True,
                     markerscale=2,
                     # framealpha=0.3,
                 )
+                settings.fig.canvas.draw()
+
+                if self.legend_collides(
+                    settings.ax,
+                    settings.x_data,
+                    settings.y_data,
+                ):
+
+                    label_y = settings.ax.xaxis.get_tightbbox().y1  # ist in Pixeln
+                    fig_height = (
+                        settings.fig.get_size_inches()[1] * settings.fig.dpi
+                    )  # in Pixel (dots) umgerechnet
+                    label_y_normalized = (
+                        label_y / fig_height
+                    )  # in Prozent umrechnen (für bbox_to_anchor)
+
+                    offset = (
+                        3 / 25.4 * settings.fig.dpi / fig_height
+                    )  # drei Millimeter in Prozent
+
+                    settings.ax.legend(
+                        frameon=True,
+                        fancybox=True,
+                        shadow=True,
+                        markerscale=2,
+                        bbox_to_anchor=(0.5, -(label_y_normalized + offset)),
+                        loc="upper center",
+                    )
 
     def plot_results(
         self,
@@ -376,7 +447,7 @@ class Laserplot:
         """Erstellt einen Plot mit den in den Plotting-Settings definierten Graphen."""
 
         plt.ioff()
-        # diry, aber: Irgendwo wird eine figure ohne Inhalt erstellt und nicht geschlossen?? Die dann unten gezeigt werden würde.
+        # dirty, aber: Irgendwo wird eine figure ohne Inhalt erstellt und nicht geschlossen?? Die dann unten gezeigt werden würde.
         plt.close("all")
         # measurements, wav, curr_measurement_index = messdata.get_data()
 
@@ -396,7 +467,7 @@ class Laserplot:
         #         print(f"the dir {setting.file_path} ist empty!")
         #         plotting_settings.remove(setting)
 
-        fig, ax = plt.subplots(layout="constrained")
+        fig, ax = plt.subplots()  # plt.subplots(layout="constrained")
         fig_colorful, ax_colorful = plt.subplots()
 
         # plt.grid(True)
@@ -662,8 +733,10 @@ class Laserplot:
 
         for fig, path, suffix in zip(figures, paths, suffixes):
             fig.savefig(
-                os.path.join(setting.file_path, title + suffix + ".png"), dpi=300
+                os.path.join(setting.file_path, title + suffix + ".png"),
+                dpi=600,
             )
+
             os.makedirs(path, 0o777, exist_ok=True)
 
             # relpath, da docker und host unterschiedliche roots haben
