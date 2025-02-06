@@ -286,17 +286,18 @@ class Laserplot:
             # den konstanten Teil am Ende wegschneiden (der eine sehr geringe Steigung hat)
             index = len(settings.y_data)
             step_size = ceil(len(settings.y_data) / 10)
-            for i in range(len(settings.y_data) - step_size - 1, 0, -step_size):
-                m = abs(
-                    np.polyfit(
-                        settings.x_data[i : i + step_size],
-                        settings.y_data[i : i + step_size],
-                        deg=1,
-                    )[0]
-                )
-                if np.rad2deg(np.arctan(m)) > 25:
-                    index = i
-                    break
+            if step_size > 1:
+                for i in range(len(settings.y_data) - step_size - 1, 0, -step_size):
+                    m = abs(
+                        np.polyfit(
+                            settings.x_data[i : i + step_size],
+                            settings.y_data[i : i + step_size],
+                            deg=1,
+                        )[0]
+                    )
+                    if np.rad2deg(np.arctan(m)) > 25:
+                        index = i
+                        break
 
             cut_data_x = settings.x_data[:index]
             cut_data_y = settings.y_data[:index]
@@ -321,6 +322,7 @@ class Laserplot:
             # verhindern, dass das Label gar nicht erst erstellt wird (siehe if weiter unten)
             settings.label = " " if settings.label is None else settings.label
 
+            # bei Noise kommt manchmal ein OptimizeWarning
             parameter = scipy.optimize.curve_fit(
                 lambda t, a, b, c: a * np.exp(b * t) + c,
                 settings.x_data,
@@ -388,52 +390,60 @@ class Laserplot:
         # weniger Weiß an den Rändern. Überschreibt aber constrained layout
         # fig.tight_layout()
 
-        if settings.label is not None:
-            # https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.legend.html#matplotlib.axes.Axes.legend
-            if USE_GRID:
+        options = {
+            "frameon": True,
+            "fancybox": True,
+            "shadow": True,
+            "markerscale": 4 if USE_GRID else 2,
+            # framealpha=0.3,
+        }
 
-                settings.ax.legend(
-                    frameon=True,
-                    fancybox=True,
-                    shadow=True,
-                    markerscale=4,
+        if settings.label is not None:
+            settings.ax.legend(**options)
+            settings.fig.canvas.draw()
+
+            if self.legend_collides(
+                settings.ax,
+                settings.x_data,
+                settings.y_data,
+            ):
+
+                # ist in Pixeln
+                label_y = settings.ax.xaxis.get_tightbbox().y1
+                # in Pixel (dots) umgerechnet
+                fig_height = settings.fig.get_size_inches()[1] * settings.fig.dpi
+                # in Prozent umrechnen (für bbox_to_anchor)
+                label_y_normalized = label_y / fig_height
+
+                # drei Millimeter in Prozent
+                offset = 3 / 25.4 * settings.fig.dpi / fig_height
+
+                options.update(
+                    {
+                        "bbox_to_anchor": (0.5, -(label_y_normalized + offset)),
+                        "loc": "upper center",
+                        "ncols": 1,  # default
+                    }
                 )
-            else:
-                settings.ax.legend(
-                    frameon=True,
-                    fancybox=True,
-                    shadow=True,
-                    markerscale=2,
-                    # framealpha=0.3,
-                )
+
+                settings.ax.legend(**options)
+
+                settings.fig.canvas.draw()
+                orig_bounds = settings.ax.get_position().bounds
+
+                # testen, ob zweispaltig besser ist
+                options["ncols"] = 2
+                settings.ax.legend(**options)
                 settings.fig.canvas.draw()
 
-                if self.legend_collides(
-                    settings.ax,
-                    settings.x_data,
-                    settings.y_data,
+                # rückgängig machen, wenn height gain kleiner ist als width Verlust (-1 ist height, -2 ist width)
+                if (
+                    settings.ax.get_position().bounds[-1] - orig_bounds[-1]
+                    < orig_bounds[-1] - settings.ax.get_position().bounds[-2]
                 ):
-
-                    label_y = settings.ax.xaxis.get_tightbbox().y1  # ist in Pixeln
-                    fig_height = (
-                        settings.fig.get_size_inches()[1] * settings.fig.dpi
-                    )  # in Pixel (dots) umgerechnet
-                    label_y_normalized = (
-                        label_y / fig_height
-                    )  # in Prozent umrechnen (für bbox_to_anchor)
-
-                    offset = (
-                        3 / 25.4 * settings.fig.dpi / fig_height
-                    )  # drei Millimeter in Prozent
-
-                    settings.ax.legend(
-                        frameon=True,
-                        fancybox=True,
-                        shadow=True,
-                        markerscale=2,
-                        bbox_to_anchor=(0.5, -(label_y_normalized + offset)),
-                        loc="upper center",
-                    )
+                    options["ncols"] = 1
+                    settings.ax.legend(**options)
+                    settings.fig.canvas.draw()
 
     def plot_results(
         self,
