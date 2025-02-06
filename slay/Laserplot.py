@@ -478,7 +478,8 @@ class Laserplot:
         #         plotting_settings.remove(setting)
 
         fig, ax = plt.subplots()  # plt.subplots(layout="constrained")
-        fig_colorful, ax_colorful = plt.subplots()
+        # werden nicht immer benutz, daher nur bei Bedarf erstellen (damit keine leeren Plots erstelltt werden)
+        fig_colorful, ax_colorful = (None, None)
 
         # plt.grid(True)
         if USE_GRID:
@@ -680,6 +681,8 @@ class Laserplot:
             self.data_to_plot(graphSettings)
 
             if not multiple_plots and not setting.single_wav:
+                if fig_colorful is None and ax_colorful is None:
+                    fig_colorful, ax_colorful = plt.subplots()
                 graphSettings.fig = fig_colorful
                 graphSettings.ax = ax_colorful
                 graphSettings.rainbow = True
@@ -714,7 +717,7 @@ class Laserplot:
             # ich weiß, dass das scuffed ist, der Bug ist aber auch nicht mehr aufgetreten bisher...
             # plt.ioff()
             for i in range(10):
-                print(i)
+                print(f"plt.show() on {i+1} try")
                 if i == 9:
                     print("could not show plot...")
                     break
@@ -724,6 +727,8 @@ class Laserplot:
                     # print("waiting for five sec...")
                     # time.sleep(5)
                     break
+                except KeyboardInterrupt:
+                    raise
                 except:
                     continue
             # plt.ion()
