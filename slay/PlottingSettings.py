@@ -11,6 +11,7 @@ class PlottingSettings:
         smooth,
         zoom_start=0,
         zoom_end=sys.maxsize,
+        single_wav=0,
         interval_start=0,
         interval_end=sys.maxsize,
         normalize_integrationtime=False,
@@ -18,7 +19,6 @@ class PlottingSettings:
         color=None,
         line_style="-",
         scatter=False,
-        # focus_wavelength=None,  # zeigt die Stärke der Wellenlänge über die Zeit an. Zoom wird damit ignoriert.
     ):
         self.file_path = file_path
         # Name des Plots beim Speichern. Der "Code" repräsentiert den Code-Namen des "Plot-Projekts"
@@ -30,9 +30,25 @@ class PlottingSettings:
         # Angabe: Wellenlänge
         self.zoom_start_wav = zoom_start
         self.zoom_end_wav = zoom_end
+        # nicht default (default ist kein Zoom)
+        self.zoomed = not (
+            self.zoom_start_wav == 0 and self.zoom_end_wav == sys.maxsize
+        )
 
-        self.single_wav = self.zoom_start_wav + 1 == self.zoom_end_wav
+        self.single_wav = single_wav
+        # prinzipiell ist single_wav das gleiche wie zoom_start_wav + 1 == zoom_end_wav
+        if single_wav:
+            if (
+                self.zoom_start_wav != self.single_wav
+                or self.zoom_end_wav != self.single_wav + 1
+            ) and self.zoomed:
+                raise ValueError(
+                    "Setting zoom and single_wav at the same time is not allowed."
+                )
+            self.zoom_start_wav = self.single_wav
+            self.zoom_end_wav = self.single_wav + 1
 
+        # Index (wird später umgerechnet)
         self.zoom_start = 0
         self.zoom_end = sys.maxsize
 
@@ -53,12 +69,6 @@ class PlottingSettings:
         self.color = color
         self.line_style = line_style
         self.scatter = scatter
-        # self.focus_wavelength = focus_wavelength
-
-    # doof, weil interval_end später auf die Länge des Arrays gesetzt wird
-    # def sliced(self) -> bool:
-    #     """Prüft, ob das Bild ein Ausschnitt einer Messreihe ist."""
-    #     return not (self.interval_start == 0 and self.interval_end == sys.maxsize)
 
     def zoom(self) -> bool:
         """Prüft, ob das Bild ein Ausschnitt des Spektrums, welches das Spektrometer messen kann, ist."""

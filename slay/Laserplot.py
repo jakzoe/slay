@@ -597,6 +597,7 @@ class Laserplot:
                 / normalize_power
             )
             if setting.single_wav:
+                # setting.zoom_start : setting.zoom_end ist nur ein Element in diesem Fall
                 extracted_data = extracted_data.flatten()
 
             # # jede Wiederholung der Messung
@@ -699,7 +700,12 @@ class Laserplot:
                     if tle_set.sliced
                     else ""
                 )
-                + (f"_{tle_set.zoom_start_wav}" if setting.single_wav else "")
+                + (f"_{tle_set.single_wav}" if setting.single_wav else "")
+                + (
+                    f"_{tle_set.zoom_start_wav}_{tle_set.zoom_end_wav}"
+                    if setting.zoomed
+                    else ""
+                )
                 # + ("_sw" if setting.single_wav else "")  # single wav (wird aber durch den Interval schon angegeben)
                 + (
                     "_in" if tle_set.normalize_integrationtime else ""
