@@ -1,4 +1,4 @@
-# prinzipiell häte "dataclasses-json" mehr Optionen
+# prinzipiell hätte das Package "dataclasses-json" mehr Optionen
 from dataclasses import dataclass, asdict
 import json
 
