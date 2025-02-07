@@ -127,6 +127,7 @@ if __name__ == "__main__":
     #         path,
     #         name,
     #         smooth=True,
+    #         single_wav=750,
     #         scatter=True,
     #     )
     # ]
@@ -177,12 +178,10 @@ if __name__ == "__main__":
     def worker(args):
         return make_plots(*args)
 
-    # print(f"Max processes: {os.cpu_count()}")
-    max_workers = None  # None to disable
     start_time = time.time()
 
     try:
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        with ProcessPoolExecutor(max_workers=int(os.cpu_count() / 1.5)) as executor:
             executor.map(worker, tasks)
     except KeyboardInterrupt:
         multiprocessing.active_children()
