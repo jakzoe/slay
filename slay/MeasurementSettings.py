@@ -14,27 +14,31 @@ class MeasurementSettings:
 
     @dataclass
     class LaserSettings:
-        REPETITIONS: int
-        MEASUREMENT_DELAY: int
-        IRRADITION_TIME: int
-        ARDUINO_DELAY: int
-        INTENSITY_NKT: float
-        INTENSITY_405: int
-        NUM_PULSES_445: int
-        PULSE_DELAY_445: int
-        ND_NKT: int
+        REPETITIONS: int  # wie häufig eine Messung wiederholt wird
+        MEASUREMENT_DELAY: int  # ms, die zwischen jeder Messung gewartet werden sollen
+        IRRADITION_TIME: int  # ms, die auf das Chlorophyll gestrahlt wird. Mind. 3 ms, ist sonst zu schnell für den Arduino
+        ARDUINO_DELAY: int  # ms, die auf den Arduino gewartet wird. Mind. 3 ms, ist sonst zu schnell für den Arduino
+        INTENSITY_NKT: float  # in Prozent
+        INTENSITY_405: int  # PWM-Signal des Arduinos (0-255)
+        NUM_PULSES_445: int  # Pulse, die der Arduino sendet. In Clock-Zyklen.
+        PULSE_DELAY_445: int  # Pause zwischen den Pulsen
+        ND_NKT: int  # ND-Wert des Filters, der dazwischen ist
         ND_405: int
         ND_445: int
-        CONTINOUS: bool
+        CONTINOUS: bool  # Laser durchgängig angeschaltet lassen oder nicht
 
-    UNIQUE: bool
-    TYPE: str
-    FENSTER_KUEVETTE: int
-    TIMEOUT: int
-    WATCHDOG_GRACE: int
+    UNIQUE: bool  # neue Messungen überschreiben alte Messungen, wenn sie keinen eindeutigen Namen haben
+    TYPE: str  # Name der Messung
+    FENSTER_KUEVETTE: (
+        int  # Anzahl der Fenster der verwendeten Küvette. Normalerweise zwei oder vier.
+    )
+    TIMEOUT: int  # Sekunden, nach denen die Messung, unabhängig von REPETITIONS, beendet werden soll
+    WATCHDOG_GRACE: int  # besteht für eine bestimmte Zeit keine Kommunikation zwischen Arduino und Software: Abbruch
     specto: SpectoSettings
     laser: LaserSettings
-    FUELLL_MENGE: int = 0  # in alten Messungen noch nicht vorhanden gewesen
+    FUELLL_MENGE: int = (
+        0  # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0
+    )
 
     def save_as_json(self, json_file):
         json.dump(asdict(self), json_file, indent=4)
@@ -58,38 +62,3 @@ class MeasurementSettings:
             return cls(**dict_data)
 
         return from_dict(MeasurementSettings, data)
-
-
-# MEASUREMENT_SETTINGS = {
-#     "UNIQUE": True,  # neue Messungen überschreiben alte Messungen, wenn sie keinen eindeutigen Namen haben
-#     "TYPE": "Bier",  # Chlorophyll, Kresse
-#     # "ANAEROB": False,
-#     "specto": {
-#         "INTTIME": 2,  # int(1_000 * 60 * 1 / 2)  # 1-498000 ms
-#         "SCAN_AVG": 1,  # > 1
-#         "SMOOTH": 0,  # 1-4
-#         "XTIMING": 3,  # 1-3
-#     },
-#     ## ACHTUNG: DELAY und IRRADITION_TIME sollten MINDESTENS 3 ms, sein, der Arduino schafft es nicht in kürzerer Zeit, alles anzustellen
-#     "laser": {
-#         "REPETITIONS": 100,  # wie häufig eine Messung wiederholt wird
-#         "MEASUREMENT_DELAY": 3,  # Zeit in ms, die zwischen jeder Messung gewartet werden soll
-#         "IRRADITION_TIME": 3,  # Zeit in ms, die auf das Chlorophyll gestrahlt wird
-#         "ARDUINO_DELAY": 3,  # Zeit in ms, die auf den Arduino gewartet wird
-#         "INTENSITY": 100,  # wie stark der Laser eingestellt ist (z. B. Frequenz oder Spannung, je nach Lasertyp)
-#         "CONTINOUS": True,  # Laser durchgängig angeschaltet lassen oder nicht
-#         "GRAUFILTER": False,  # ob ein Graufilter dazwischen ist oder nicht
-#         "TIMEOUT": 4600,  # Sekunden, nach denen die Messung, unabhängig von REPETITIONS, beendet werden soll
-#     },
-#     # "indices": {
-#     #     "INTTIME_INDEX": 0,
-#     #     "INTENSITY_INDEX": 1,
-#     #     "SCAN_AVG_INDEX": 2,
-#     #     "SMOOTH_INDEX": 3,
-#     #     "XTIMING_INDEX": 4,
-#     #     "REPETITIONS_INDEX": 5,
-#     #     "ARDUINO_DELAY_INDEX": 6,
-#     #     "IRRADITION_TIME_INDEX": 7,
-#     #     "CONTINOUS_INDEX": 8,
-#     # },
-# }
