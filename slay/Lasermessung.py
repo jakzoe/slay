@@ -2,7 +2,8 @@ from multiprocessing import Process
 from Laserplot import Laserplot
 from PlottingSettings import PlottingSettings
 
-from NKT import LaserController
+from NKT import NKT
+from LTB import LTB
 
 from MeasurementSettings import MeasurementSettings
 
@@ -55,7 +56,8 @@ class Lasermessung:
     def __init__(
         self,
         arduino_path: str,
-        laser_path: str,
+        nkt_path: str,
+        ltb_path: str,
         MEASUREMENT_SETTINGS: MeasurementSettings,
     ):
 
@@ -128,7 +130,7 @@ class Lasermessung:
             )
         )
 
-        self.nkt = LaserController(laser_path)
+        self.nkt = NKT(nkt_path)
         # erst später anschalten
         self.nkt.set_register("emission", 0)
 
@@ -139,6 +141,12 @@ class Lasermessung:
         self.nkt.set_register("pulse_frequency", freq)
         print(f"Frequenz auf {freq} gesetzt.")
         self.nkt.set_register("operating_mode", 4)  # external trigger high signl
+
+        self.ltb = LTB(port=ltb_path)
+        self.ltb.turn_laser_on()  # auf stand by setzen (dauert 10 Sekunden, da der Laser erst "warm werden" muss)
+        self.ltb.set_hv_voltage(self.MEASUREMENT_SETTINGS.laser.INTENSITY_LTB)
+        self.ltb.set_repetition_rate(self.MEASUREMENT_SETTINGS.laser.REPETITIONS_LTB)
+
         self.led_green()
 
         # measurements = []

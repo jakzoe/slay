@@ -5,15 +5,28 @@ from Lasermessung import Lasermessung
 
 try:
     ARDUINO_PATH = sys.argv[1]
+    if "none" == ARDUINO_PATH:
+        raise IndexError()
 except IndexError:
     ARDUINO_PATH = ""
     print("could not find Arduino control unit")
 
 try:
     NKT_PATH = sys.argv[2]
+    if "none" == NKT_PATH:
+        raise IndexError()
 except IndexError:
     NKT_PATH = ""
     print("could not find NKT LASER")
+
+try:
+    LTB_PATH = sys.argv[3]
+    if "none" == LTB_PATH:
+        raise IndexError()
+except IndexError:
+    LTB_PATH = ""
+    print("could not find LTB LASER")
+
 
 if __name__ == "__main__":
 
@@ -39,6 +52,8 @@ if __name__ == "__main__":
             INTENSITY_405=0,  # kaum noch sichtbar unter 60
             NUM_PULSES_445=50,  # 1234 ist kein PWM
             PULSE_DELAY_445=10,
+            REPETITIONS_LTB=0,
+            INTENSITY_LTB=0,
             ND_NKT=0,
             ND_405=0,
             ND_445=0,
@@ -46,7 +61,7 @@ if __name__ == "__main__":
         ),
     )
 
-    measurement = Lasermessung(ARDUINO_PATH, NKT_PATH, measurement_settings)
+    measurement = Lasermessung(ARDUINO_PATH, NKT_PATH, LTB_PATH, measurement_settings)
 
     # measurement.infinite_measuring()
     # exit()

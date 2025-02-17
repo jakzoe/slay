@@ -25,24 +25,31 @@ run_docker_with_device() {
   local device=$(echo "$input" | awk '{print $4}' | sed 's/://')
   local spec_path="/dev/bus/usb/$bus/$device"
   arduino_path=$(get_tty_path "1a86" "7523")
-  laser_path=$(get_tty_path "10c4" "ea60")
+  nkt_path=$(get_tty_path "10c4" "ea60")
+  ltb_path=$(get_tty_path "0403" "6001")
 
   if [ -n "$spec_path" ]; then
     spec_device="--device=$spec_path"
   else
-    spec_device=""
+    spec_device="none"
   fi
 
   if [ -n "$arduino_path" ]; then
     arduino_device="--device=$arduino_path"
   else
-    arduino_device=""
+    arduino_device="none"
   fi
 
-  if [ -n "$laser_path" ]; then
-    laser_device="--device=$laser_path"
+  if [ -n "$nkt_path" ]; then
+    nkt_device="--device=$nkt_path"
   else
-    laser_device=""
+    nkt_device="none"
+  fi
+
+  if [ -n "$ltb_path" ]; then
+    ltb_device="--device=$ltb_path"
+  else
+    ltb_device="none"
   fi
 
   if [[ ! -c "$spec_path" ]]; then
@@ -54,8 +61,8 @@ run_docker_with_device() {
     -e "DISPLAY=$DISPLAY" \
     --mount type=bind,src=/tmp/.X11-unix,dst=/tmp/.X11-unix \
     --device=/dev/dri:/dev/dri \
-    "$spec_device" "$arduino_device" "$laser_device" \
-    laserdocker "$arduino_path" "$laser_path"
+    "$spec_device" "$arduino_device" "$nkt_device" "$ltb_device" \
+    laserdocker "$arduino_path" "$nkt_path"
 
   return $?
 }

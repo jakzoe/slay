@@ -26,6 +26,12 @@ class MeasurementSettings:
         ND_405: int
         ND_445: int
         CONTINOUS: bool  # Laser durchgängig angeschaltet lassen oder nicht
+        INTENSITY_LTB: int = (
+            0  # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0
+        )
+        REPETITIONS_LTB: int = (
+            0  # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0
+        )
 
     UNIQUE: bool  # neue Messungen überschreiben alte Messungen, wenn sie keinen eindeutigen Namen haben
     TYPE: str  # Name der Messung
