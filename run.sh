@@ -61,6 +61,7 @@ run_docker_with_device() {
     -e "DISPLAY=$DISPLAY" \
     --mount type=bind,src=/tmp/.X11-unix,dst=/tmp/.X11-unix \
     --device=/dev/dri:/dev/dri \
+    --rm \
     "$spec_device" "$arduino_device" "$nkt_device" "$ltb_device" \
     laserdocker "$arduino_path" "$nkt_path"
 
