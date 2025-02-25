@@ -1,5 +1,4 @@
-# build and run with e.g. 
-# docker build -t laserdocker . && docker run -v /home/user/slay/myproject:/root/slay -e "DISPLAY=$DISPLAY" --mount type=bind,src=/tmp/.X11-unix,dst=/tmp/.X11-unix --device=/dev/dri:/dev/dri --device=/dev/bus/usb/003/005 laserdocker
+# docker build -t laserdocker .
 # docker system prune # -a for EVERYTHING
 
 FROM debian:latest

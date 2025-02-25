@@ -28,28 +28,30 @@ run_docker_with_device() {
   nkt_path=$(get_tty_path "10c4" "ea60")
   ltb_path=$(get_tty_path "0403" "6001")
 
+   local devices=""
+
   if [ -n "$spec_path" ]; then
-    spec_device="--device=$spec_path"
+    devices+="--device=$spec_path "
   else
-    spec_device="none"
+    spec_path="none"
   fi
 
   if [ -n "$arduino_path" ]; then
-    arduino_device="--device=$arduino_path"
+    devices+="--device=$arduino_path "
   else
-    arduino_device="none"
+    arduino_path="none"
   fi
 
   if [ -n "$nkt_path" ]; then
-    nkt_device="--device=$nkt_path"
+    devices+="--device=$nkt_path "
   else
-    nkt_device="none"
+    nkt_path="none"
   fi
 
   if [ -n "$ltb_path" ]; then
-    ltb_device="--device=$ltb_path"
+    devices+="--device=$ltb_path "
   else
-    ltb_device="none"
+    ltb_path="none"
   fi
 
   if [[ ! -c "$spec_path" ]]; then
@@ -62,9 +64,9 @@ run_docker_with_device() {
     --mount type=bind,src=/tmp/.X11-unix,dst=/tmp/.X11-unix \
     --device=/dev/dri:/dev/dri \
     --rm \
-    "$spec_device" "$arduino_device" "$nkt_device" "$ltb_device" \
-    laserdocker "$arduino_path" "$nkt_path"
-
+    $devices \
+    laserdocker "$arduino_path" "$nkt_path" "$ltb_path"
+    
   return $?
 }
 
