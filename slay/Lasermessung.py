@@ -30,10 +30,13 @@ except Exception as e:
 
 
 class Messdata:
-    def __init__(self, length, wav):
-        self.measurements = np.zeros([length, len(wav)], dtype=float)
-        self.timestamps = np.zeros(length, dtype=float)
+    def __init__(self, num_gradiants, repetitions, wav):
+        self.measurements = np.zeros(
+            (num_gradiants, repetitions, len(wav)), dtype=float
+        )
+        self.timestamps = np.zeros((num_gradiants, repetitions), dtype=float)
         self.wav = wav
+        self.curr_gradiant = -1
         self.curr_measurement_index = -1
 
     def get_data(self):
@@ -88,14 +91,33 @@ class Lasermessung:
         self.spectrometer_setup()
         self.arduino_setup(arduino_path, 3)  # 1 ist definitiv zu kurz (getestet)
 
+        self.nkt = NKT(nkt_path)
+        # erst später anschalten
+        self.nkt.set_register("emission", 0)
+
+        self.ltb = LTB(port=ltb_path)
+        self.ltb.turn_laser_on()  # auf stand by setzen (dauert 10 Sekunden, da der Laser erst "warm werden" muss)
+
+        self.messdata = Messdata(
+            self.MEASUREMENT_SETTINGS.laser.num_gradiants,
+            self.MEASUREMENT_SETTINGS.laser.REPETITIONS,
+            self.get_wav(),
+        )
+
+        self.set_laser_powers(0)
+        # aktuell noch keine Output-Power
+        self.led_green()
+
+    def set_laser_powers(self, index):
+
         self.set_arduino_variable(
-            "PWM405", self.MEASUREMENT_SETTINGS.laser.INTENSITY_405
+            "PWM405", self.MEASUREMENT_SETTINGS.laser.INTENSITY_405[index]
         )
         self.set_arduino_variable(
-            "Num445", self.MEASUREMENT_SETTINGS.laser.NUM_PULSES_445
+            "Num445", self.MEASUREMENT_SETTINGS.laser.NUM_PULSES_445[index]
         )
         self.set_arduino_variable(
-            "Del445", self.MEASUREMENT_SETTINGS.laser.PULSE_DELAY_445
+            "Del445", self.MEASUREMENT_SETTINGS.laser.PULSE_DELAY_445[index]
         )
         self.set_arduino_variable(
             "ConMea", int(self.MEASUREMENT_SETTINGS.laser.CONTINOUS)
@@ -130,34 +152,19 @@ class Lasermessung:
             )
         )
 
-        self.nkt = NKT(nkt_path)
-        # erst später anschalten
-        self.nkt.set_register("emission", 0)
-
         max_freq = self.nkt.get_register("max_frequency")  # 21502
         print(f"max freq is {max_freq}")
         # um auch Bruchteile zu erlauben
-        freq = int(max_freq / 100 * self.MEASUREMENT_SETTINGS.laser.INTENSITY_NKT)
+        freq = int(
+            max_freq / 100 * self.MEASUREMENT_SETTINGS.laser.INTENSITY_NKT[index]
+        )
         self.nkt.set_register("pulse_frequency", freq)
         print(f"Frequenz auf {freq} gesetzt.")
         self.nkt.set_register("operating_mode", 4)  # external trigger high signl
 
-        self.ltb = LTB(port=ltb_path)
-        self.ltb.turn_laser_on()  # auf stand by setzen (dauert 10 Sekunden, da der Laser erst "warm werden" muss)
-        self.ltb.set_hv_voltage(self.MEASUREMENT_SETTINGS.laser.INTENSITY_LTB)
-        self.ltb.set_repetition_rate(self.MEASUREMENT_SETTINGS.laser.REPETITIONS_LTB)
-
-        self.led_green()
-
-        # measurements = []
-
-        # for i in range (self.MEASUREMENT_SETTINGS["laser"]["REPETITIONS"]):
-        #     measurements.append(get_data())
-        #     time.sleep(self.MEASUREMENT_SETTINGS["DELAY"] / 1000.0)
-
-        # minimal schneller als jedes Mal list.append()
-        self.messdata = Messdata(
-            self.MEASUREMENT_SETTINGS.laser.REPETITIONS, self.get_wav()
+        self.ltb.set_hv_voltage(self.MEASUREMENT_SETTINGS.laser.INTENSITY_LTB[index])
+        self.ltb.set_repetition_rate(
+            self.MEASUREMENT_SETTINGS.laser.REPETITIONS_LTB[index]
         )
 
     def arduino_setup(self, port, wait):
@@ -367,8 +374,8 @@ class Lasermessung:
         #     return
 
         def measure(i):
-            self.messdata.measurements[i] = self.get_data()
-            self.messdata.timestamps[i] = time.time()
+            self.messdata.measurements[self.messdata.curr_gradiant][i] = self.get_data()
+            self.messdata.timestamps[self.messdata.curr_gradiant][i] = time.time()
             time.sleep(self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000.0)
 
         self.led_red()
@@ -388,7 +395,6 @@ class Lasermessung:
             self.turn_on_laser()
             print("turned on lasers", flush=True)
             self.time_measurement(measure)
-            self.stop_all_devices()
 
         self.watchdog_wrap(send_and_wait, measure_func)
 
@@ -401,8 +407,8 @@ class Lasermessung:
         def measure(i):
             self.turn_on_laser()
             time.sleep(self.MEASUREMENT_SETTINGS.laser.IRRADITION_TIME / 1000.0)
-            self.messdata.measurements[i] = self.get_data()
-            self.messdata.timestamps[i] = time.time()
+            self.messdata.measurements[self.messdata.curr_gradiant][i] = self.get_data()
+            self.messdata.timestamps[self.messdata.curr_gradiant][i] = time.time()
             self.turn_off_laser()
             time.sleep(self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000.0)
 
@@ -410,7 +416,6 @@ class Lasermessung:
         # auch, wenn Emission schon an ist, wird der LASER extern vom Arduino getriggert
         self.nkt.set_register("emission", 1)
         self.time_measurement(measure)
-        self.stop_all_devices()
 
     def infinite_measuring(self, gui=True, nkt_on=True):
         if nkt_on:
@@ -440,8 +445,10 @@ class Lasermessung:
                 while True:
                     next_measurement_index = (
                         self.messdata.curr_measurement_index + 1
-                    ) % len(self.messdata.measurements)
-                    self.messdata.measurements[next_measurement_index] = self.get_data()
+                    ) % len(self.messdata.measurements[self.messdata.curr_gradiant])
+                    self.messdata.measurements[self.messdata.curr_gradiant][
+                        next_measurement_index
+                    ] = self.get_data()
                     time.sleep(
                         self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000.0
                     )
@@ -458,21 +465,29 @@ class Lasermessung:
         if gui:
             self.enable_gui()
 
-        def run():
-            if self.MEASUREMENT_SETTINGS.laser.CONTINOUS:
-                self.continuous_measurement()
-            else:
-                self.pulse_measurement()
+        for self.messdata.curr_gradiant in range(
+            self.MEASUREMENT_SETTINGS.laser.num_gradiants
+        ):
 
-        if thread:
-            t = threading.Thread(
-                target=run,
-                daemon=True,  # Main-Thread soll nicht auf den Thread warten
-            )
-            t.start()
-            t.join()
-        else:
-            run()
+            self.set_laser_powers(self.messdata.curr_gradiant)
+
+            def run():
+                if self.MEASUREMENT_SETTINGS.laser.CONTINOUS:
+                    self.continuous_measurement()
+                else:
+                    self.pulse_measurement()
+
+            if thread:
+                t = threading.Thread(
+                    target=run,
+                    daemon=True,  # Main-Thread soll nicht auf den Thread warten
+                )
+                t.start()
+                t.join()
+            else:
+                run()
+
+        self.stop_all_devices()
 
         if gui:
             self.disable_gui()
@@ -531,10 +546,6 @@ class Lasermessung:
                 [PlottingSettings(type_dir, code_name, True)],
                 self.MEASUREMENT_SETTINGS,
             )
-
-    # def get_measurement_data(self):
-    #     """Gibt alle notwendigen Daten zurück, die für eine Auswertung benötigt werden."""
-    #     return self.MEASUREMENT_SETTINGS, self.messdata.measurements, self.messdata.wav
 
     def plot_path(self, settings, mSettings=None):
 

@@ -6,6 +6,7 @@ import time
 import shutil
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
+import copy
 
 delete_old_pictures = True
 # um schnell bestimmtes zu exkludieren
@@ -15,6 +16,7 @@ plot_time_slices = True
 
 # nur bestimmtes plotten. Leer ist disable (alles plotten). Enthält Keyword, welches in dem Namen sein muss.
 plot_list = [
+    # "Gradiant"
     # "Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Mit_Absatz_Aber_Also_Doof"
 ]  # ["Bodensatz"]
 blacklist = False  # black- oder whitelist
@@ -40,6 +42,7 @@ def make_plots(path, name):
 
     # Fluoreszenz-Peak plotten (ca. zwischen 720 und 740 nm bei Chlorophyll)
     if plot_fluo:
+        curr_len = len(p_settings)
         p_settings.extend(
             (
                 [
@@ -71,6 +74,10 @@ def make_plots(path, name):
                 ],
             )
         )
+        for i in range(curr_len, len(p_settings)):
+            inte_setting = copy.deepcopy(p_settings[i][0])
+            inte_setting.interpolate = True
+            p_settings.append([inte_setting])
 
     # # einzelne Zeitabschnitte plotten
     if plot_time_slices:
@@ -118,16 +125,19 @@ def make_plots(path, name):
 
 if __name__ == "__main__":
 
-    # path = r"messungen/Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Mit_Absatz_Aber_Also_Doof/Kontinuierlich/"
-    # name = r"2025-01-26 20_39_36.791213"
+    # path = r"messungen/Gradiant_Test/Kontinuierlich/"
+    # name = r"test-messung"
     # m_settings = MeasurementSettings.from_json(os.path.join(path, name + ".json"))
+    # # m_settings.print_status()
 
     # p = [
     #     PlottingSettings(
     #         path,
     #         name,
     #         smooth=True,
-    #         single_wav=750,
+    #         # single_wav=750,
+    #         grad_start=2,
+    #         grad_end=4,
     #         scatter=True,
     #     )
     # ]
@@ -173,6 +183,11 @@ if __name__ == "__main__":
 
         for name in names:
             tasks.append((path, name))
+
+    # for task in tasks:
+    #     make_plots(*task)
+
+    # exit()
 
     # lambda geht nicht...
     def worker(args):

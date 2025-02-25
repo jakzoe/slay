@@ -36,45 +36,30 @@ import sys
 import time
 import scipy
 import threading
-
+import copy
 from math import ceil, floor
+
+from dataclasses import dataclass
 
 
 class Laserplot:
 
+    @dataclass
     class GraphSettings:
-
-        def __init__(
-            self,
-            fig,
-            ax,
-            x_data,
-            y_data,
-            label,
-            smooth,
-            color,
-            style,
-            std=None,
-            rainbow=False,
-            scatter=True,
-            marker_size=4,
-            time_plot=False,
-            single_wav=False,
-        ):
-            self.fig = fig
-            self.ax = ax
-            self.x_data = x_data
-            self.y_data = y_data
-            self.label = label
-            self.smooth = smooth
-            self.color = color
-            self.style = style
-            self.std = std
-            self.rainbow = rainbow
-            self.scatter = scatter
-            self.marker_size = marker_size
-            self.time_plot = time_plot
-            self.single_wav = single_wav
+        fig: any
+        ax: any
+        x_data: any
+        y_data: any
+        label: str
+        smooth: bool
+        color: any
+        style: str
+        std: any = None
+        rainbow: bool = False
+        scatter: bool = True
+        marker_size: int = 4
+        time_plot: bool = False
+        interpolate: bool = False
 
     def __init__(self):
 
@@ -285,8 +270,7 @@ class Laserplot:
                 # alpha=0.1,
             )
 
-        if settings.single_wav:  # settings.time_plot:
-
+        if settings.interpolate:
             # den konstanten Teil am Ende wegschneiden (der eine sehr geringe Steigung hat)
             index = len(settings.y_data)
             step_size = ceil(len(settings.y_data) / 10)
@@ -498,7 +482,7 @@ class Laserplot:
         # ob mehrere Graphen geplottet werden
         multiple_plots = len(plotting_settings) != 1
         time_plot = not multiple_plots and plotting_settings[0].single_wav
-        for i, setting in enumerate(plotting_settings):
+        for i, orig_setting in enumerate(plotting_settings):
 
             # file_list = [
             #     os.path.join(setting.file_path, f)
@@ -506,207 +490,242 @@ class Laserplot:
             #     if f.endswith(".npz")
             # ]
 
-            file_name = os.path.join(setting.file_path, setting.code_name + ".npz")
+            file_name = os.path.join(
+                orig_setting.file_path, orig_setting.code_name + ".npz"
+            )
 
             loaded_array = np.load(file_name)
-            spectrometer_data = loaded_array["arr_0"]
+            spectrometer_data_gradient = loaded_array["arr_0"]
+            # die Wellenlängen des Spektrometers
             x_data = loaded_array["arr_1"]
-            time_stamps = loaded_array["arr_2"] - loaded_array["arr_2"][0]
+            time_stamps_gradient = loaded_array["arr_2"]
+            del loaded_array
 
-            # falls es in Prozent angegeben wurde
-            if setting.interval_start_time < 1 and setting.interval_end_time <= 1:
-                setting.interval_start_time = (
-                    time_stamps[-1] * setting.interval_start_time
-                    if setting.interval_start_time != 0
-                    else 0
-                )
-                setting.interval_end_time = time_stamps[-1] * setting.interval_end_time
+            # alte Messungen haben noch keine Gradiant-Messung, dort ist num_gradiants immer default 1
+            if len(spectrometer_data_gradient.shape) < 3:
+                spectrometer_data_gradient = np.array((spectrometer_data_gradient,))
 
-            # Sekunden in Index umrechnen
-            setting.interval_start = (
-                0
-                if setting.interval_start_time == 0
-                else (np.abs(time_stamps - setting.interval_start_time)).argmin()
+            if len(time_stamps_gradient.shape) < 2:
+                time_stamps_gradient = np.array((time_stamps_gradient,))
+
+            assert (
+                measurement_settings.laser.num_gradiants
+                == len(spectrometer_data_gradient)
+                == len(time_stamps_gradient)
             )
 
-            setting.interval_end = (
-                len(spectrometer_data)
-                if setting.interval_end_time == sys.maxsize
-                else (np.abs(time_stamps - setting.interval_end_time)).argmin()
-            )
-
-            # von Wellenlänge in Index umrechnen
-            setting.zoom_start = (
-                0
-                if setting.zoom_start_wav == 0
-                else (np.abs(x_data - setting.zoom_start_wav)).argmin()
-            )
-            if setting.single_wav:
-                setting.zoom_end = setting.zoom_start + 1
-            else:
-                setting.zoom_end = (
-                    len(x_data)
-                    if setting.zoom_end_wav == sys.maxsize
-                    else (np.abs(x_data - setting.zoom_end_wav)).argmin()
+            if orig_setting.grad_end == orig_setting.default_max:
+                orig_setting.grad_end = len(spectrometer_data_gradient)
+            elif orig_setting.grad_end > len(spectrometer_data_gradient):
+                raise ValueError(
+                    "The specified number of gradients exceeds the number of gradients in the measurement."
                 )
 
-            # nur eine Wellenlänge über die Zeit plotten
-            if setting.single_wav:
-                x_data = (loaded_array["arr_2"] - loaded_array["arr_2"][0])[
-                    setting.interval_start : setting.interval_end
-                ]  # Zeit von UNIX time in delta Time in Minuten umrechnen
-                print(f"Zeitlänge der Messung: {x_data[-1]:.2f} s")
-                x_ax_len = len(x_data)
-            else:
-                assert len(x_data) == 2048
-                x_ax_len = setting.zoom_end - setting.zoom_start
-                x_data = x_data[setting.zoom_start : setting.zoom_end]
+            for grad_index in range(orig_setting.grad_start, orig_setting.grad_end):
 
-            # setting.zoom_end = (
-            #     len(x_data)
-            #     if setting.zoom_end == sys.maxsize
-            #     else (np.abs(x_data - setting.zoom_end)).argmin()
-            # )
+                spectrometer_data = spectrometer_data_gradient[grad_index]
+                time_stamps = time_stamps_gradient[grad_index].copy()
 
-            # if setting.zoom_start != 0:
-            #     setting.zoom_start = (np.abs(x_data - setting.zoom_start)).argmin()
+                begin_time_offset = time_stamps[0] - time_stamps_gradient[0][0]
 
-            assert measurement_settings.laser.REPETITIONS == len(spectrometer_data)
+                # von absoluten Zeiten auf relative Zeiten seit Beginn der Messung
+                time_stamps -= time_stamps[0]
 
-            del time_stamps, loaded_array
+                # alternativ könnte eins auch eine reset Methode machen, das ist aber denke ich simpler
+                setting = copy.deepcopy(orig_setting)
 
-            normalize_integrationtime_factor = (
-                measurement_settings.specto.INTTIME
-                if setting.normalize_integrationtime
-                else 1
-            )
-            normalize_power = (
-                measurement_settings.laser.INTENSITY if setting.normalize_power else 1
-            )
+                # falls es in Prozent angegeben wurde
+                if setting.interval_start_time < 1 and setting.interval_end_time <= 1:
+                    setting.interval_start_time = (
+                        time_stamps[-1] * setting.interval_start_time
+                        if setting.interval_start_time != 0
+                        else 0
+                    )
+                    setting.interval_end_time = (
+                        time_stamps[-1] * setting.interval_end_time
+                    )
 
-            # # aus den gesamten Daten den durch die Slices definierten Teil ausschneiden
-            # extracted_data = np.zeros(
-            #     (
-            #         setting.interval_end - setting.interval_start,
-            #         x_ax_len,
-            #     )
-            # )
-
-            extracted_data = (
-                spectrometer_data[
-                    setting.interval_start : setting.interval_end,
-                    setting.zoom_start : setting.zoom_end,
-                ]
-                / normalize_integrationtime_factor
-                / normalize_power
-            )
-            if setting.single_wav:
-                # setting.zoom_start : setting.zoom_end ist nur ein Element in diesem Fall
-                extracted_data = extracted_data.flatten()
-
-            # # jede Wiederholung der Messung
-            # for i in range(len(spectrometer_data)):
-            #     # nur Ausschnitt aus den Widerholungen der Messung (falls gewünscht)
-            #     j = i + setting.interval_start
-            #     if j >= setting.interval_end:
-            #         break
-            #     # die gesamten Daten von der Messung i sammeln und ggf. normalisieren
-            #     intensities = []
-            #     for k in range(len(spectrometer_data[j])):
-            #         l = k + setting.zoom_start
-            #         if l >= setting.zoom_end:
-            #             break
-            #         intensities.append(
-            #             spectrometer_data[j][l]
-            #             / normalize_integrationtime_factor
-            #             / normalize_power
-            #         )
-            #     extracted_data[j] = np.array(intensities)
-            del spectrometer_data
-
-            if setting.single_wav:
-                y_data = extracted_data
-                standard_deviation = None
-            else:
-                y_data = np.mean(extracted_data, axis=0, dtype=float)
-                # STD nicht plotten, wenn es mehrere Graphen sind (zu unübersichtlich)
-                standard_deviation = (
-                    np.std(extracted_data, axis=0, dtype=float)
-                    if not multiple_plots
-                    else None
-                )
-                if standard_deviation is not None:
-                    assert len(y_data) == len(standard_deviation)
-            assert len(y_data) == x_ax_len
-
-            # nimmt zu viel Platz ein: Einfach dazu schreiben
-            # label = f"Mittelwert von {rate} Messungen"
-
-            color = colors[i] if setting.color is None else setting.color
-
-            # blauer Text (\033[ ist Escape sequence start, 34m Blue color code, 0m color reset)
-            print(
-                f"\033[34mmax: {np.max(y_data):.2f} at {x_data[np.argmax(y_data)]:.2f}\033[0m"
-            )
-
-            def round_left(x):
-                return (
-                    floor(x)
-                    if round(setting.interval_start_time)
-                    == round(setting.interval_end_time)
-                    else round(x)
+                # Sekunden in Index umrechnen
+                setting.interval_start = (
+                    0
+                    if setting.interval_start_time == 0
+                    else (np.abs(time_stamps - setting.interval_start_time)).argmin()
                 )
 
-            def round_right(x):
-                return (
-                    ceil(x)
-                    if round(setting.interval_start_time)
-                    == round(setting.interval_end_time)
-                    else round(x)
+                setting.interval_end = (
+                    len(spectrometer_data)
+                    if setting.interval_end_time == sys.maxsize
+                    else (np.abs(time_stamps - setting.interval_end_time)).argmin()
                 )
 
-            graphSettings = Laserplot.GraphSettings(
-                fig=fig,
-                ax=ax,
-                x_data=x_data,
-                y_data=y_data,
-                label=(
-                    f"{round_left(setting.interval_start_time)} s - {round_right(setting.interval_end_time)} s"
-                    if setting.sliced and not setting.single_wav
-                    else None
-                ),
-                smooth=setting.smooth,
-                color=color,
-                style=setting.line_style,
-                std=standard_deviation,
-                scatter=setting.scatter,
-                time_plot=time_plot,
-                single_wav=setting.single_wav,
-            )
-            Laserplot.data_to_plot(graphSettings)
+                # von Wellenlänge in Index umrechnen
+                setting.zoom_start = (
+                    0
+                    if setting.zoom_start_wav == 0
+                    else (np.abs(x_data - setting.zoom_start_wav)).argmin()
+                )
+                if setting.single_wav:
+                    setting.zoom_end = setting.zoom_start + 1
+                else:
+                    setting.zoom_end = (
+                        len(x_data)
+                        if setting.zoom_end_wav == sys.maxsize
+                        else (np.abs(x_data - setting.zoom_end_wav)).argmin()
+                    )
 
-            if not multiple_plots and not setting.single_wav:
-                if fig_colorful is None and ax_colorful is None:
-                    fig_colorful, ax_colorful = plt.subplots()
-                graphSettings.fig = fig_colorful
-                graphSettings.ax = ax_colorful
-                graphSettings.rainbow = True
-                graphSettings.scatter = False
-                graphSettings.std = None
+                # nur eine Wellenlänge über die Zeit plotten
+                if setting.single_wav:
+                    x_data = (time_stamps - time_stamps[0])[
+                        setting.interval_start : setting.interval_end
+                    ]  # Zeit von UNIX time in delta Time in Minuten umrechnen
+                    print(f"Zeitlänge der Messung: {x_data[-1]:.2f} s")
+                    x_ax_len = len(x_data)
+                else:
+                    assert len(x_data) == 2048
+                    x_ax_len = setting.zoom_end - setting.zoom_start
+                    x_data = x_data[setting.zoom_start : setting.zoom_end]
 
+                # setting.zoom_end = (
+                #     len(x_data)
+                #     if setting.zoom_end == sys.maxsize
+                #     else (np.abs(x_data - setting.zoom_end)).argmin()
+                # )
+
+                # if setting.zoom_start != 0:
+                #     setting.zoom_start = (np.abs(x_data - setting.zoom_start)).argmin()
+
+                assert measurement_settings.laser.REPETITIONS == len(spectrometer_data)
+
+                normalize_integrationtime_factor = (
+                    measurement_settings.specto.INTTIME
+                    if setting.normalize_integrationtime
+                    else 1
+                )
+                normalize_power = (
+                    measurement_settings.laser.INTENSITY
+                    if setting.normalize_power
+                    else 1
+                )
+
+                # # aus den gesamten Daten den durch die Slices definierten Teil ausschneiden
+                # extracted_data = np.zeros(
+                #     (
+                #         setting.interval_end - setting.interval_start,
+                #         x_ax_len,
+                #     )
+                # )
+
+                extracted_data = (
+                    spectrometer_data[
+                        setting.interval_start : setting.interval_end,
+                        setting.zoom_start : setting.zoom_end,
+                    ]
+                    / normalize_integrationtime_factor
+                    / normalize_power
+                )
+                if setting.single_wav:
+                    # setting.zoom_start : setting.zoom_end ist nur ein Element in diesem Fall
+                    extracted_data = extracted_data.flatten()
+
+                # # jede Wiederholung der Messung
+                # for i in range(len(spectrometer_data)):
+                #     # nur Ausschnitt aus den Widerholungen der Messung (falls gewünscht)
+                #     j = i + setting.interval_start
+                #     if j >= setting.interval_end:
+                #         break
+                #     # die gesamten Daten von der Messung i sammeln und ggf. normalisieren
+                #     intensities = []
+                #     for k in range(len(spectrometer_data[j])):
+                #         l = k + setting.zoom_start
+                #         if l >= setting.zoom_end:
+                #             break
+                #         intensities.append(
+                #             spectrometer_data[j][l]
+                #             / normalize_integrationtime_factor
+                #             / normalize_power
+                #         )
+                #     extracted_data[j] = np.array(intensities)
+                del spectrometer_data
+
+                if setting.single_wav:
+                    y_data = extracted_data
+                    standard_deviation = None
+                else:
+                    y_data = np.mean(extracted_data, axis=0, dtype=float)
+                    # STD nicht plotten, wenn es mehrere Graphen sind (zu unübersichtlich)
+                    standard_deviation = (
+                        np.std(extracted_data, axis=0, dtype=float)
+                        if not multiple_plots
+                        else None
+                    )
+                    if standard_deviation is not None:
+                        assert len(y_data) == len(standard_deviation)
+                assert len(y_data) == x_ax_len
+
+                # nimmt zu viel Platz ein: Einfach dazu schreiben
+                # label = f"Mittelwert von {rate} Messungen"
+
+                color = colors[i] if setting.color is None else setting.color
+
+                # blauer Text (\033[ ist Escape sequence start, 34m Blue color code, 0m color reset)
+                print(
+                    f"\033[34mmax: {np.max(y_data):.2f} at {x_data[np.argmax(y_data)]:.2f}\033[0m"
+                )
+
+                # wenn die linke Seite gerundet genauso groß wie die rechte ist, abrunden, ansonsten aufrunden
+                def round_left(x, y):
+                    return floor(x) if round(x) == round(y) else round(x)
+
+                def round_right(x, y):
+                    return ceil(y) if round(x) == round(y) else round(y)
+
+                graphSettings = Laserplot.GraphSettings(
+                    fig=fig,
+                    ax=ax,
+                    x_data=x_data,
+                    y_data=y_data,
+                    label=(
+                        # f"{round_left(setting.interval_start_time + begin_time_offset, setting.interval_end_time + begin_time_offset)} s - {round_right(setting.interval_start_time + begin_time_offset, setting.interval_end_time + begin_time_offset)} s"
+                        f"{(setting.interval_start_time + begin_time_offset):.2f} s - {(setting.interval_end_time + begin_time_offset):.2f} s"
+                        if setting.sliced and not setting.single_wav
+                        else None
+                    ),
+                    smooth=setting.smooth,
+                    color=color,
+                    style=setting.line_style,
+                    std=standard_deviation,
+                    scatter=setting.scatter,
+                    time_plot=time_plot,
+                    interpolate=setting.interpolate,
+                )
                 Laserplot.data_to_plot(graphSettings)
 
+                if not multiple_plots and not setting.single_wav:
+                    if fig_colorful is None and ax_colorful is None:
+                        fig_colorful, ax_colorful = plt.subplots()
+                    graphSettings.fig = fig_colorful
+                    graphSettings.ax = ax_colorful
+                    graphSettings.rainbow = True
+                    graphSettings.scatter = False
+                    graphSettings.std = None
+
+                    Laserplot.data_to_plot(graphSettings)
         titles = [
             (
                 f"{tle_set.code_name.split('.')[0]}"  # die Millisekunden entfernen, für kürzere Namen
                 + (
-                    f"_{round_left(tle_set.interval_start_time)}_{round_right(tle_set.interval_end_time)}"
+                    f"_g{tle_set.grad_start}_g{tle_set.grad_end}"
+                    if setting.grad_end > 1
+                    else ""
+                )
+                + (
+                    f"_{round_left(tle_set.interval_start_time, tle_set.interval_end_time)}s_{round_right(tle_set.interval_start_time, tle_set.interval_end_time)}s"
                     if tle_set.sliced
                     else ""
                 )
                 + (f"_{tle_set.single_wav}" if setting.single_wav else "")
                 + (
-                    f"_{tle_set.zoom_start_wav}_{tle_set.zoom_end_wav}"
+                    f"_z{tle_set.zoom_start_wav}_z{tle_set.zoom_end_wav}"
                     if setting.zoomed
                     else ""
                 )
@@ -715,6 +734,7 @@ class Laserplot:
                     "_in" if tle_set.normalize_integrationtime else ""
                 )  # integration normalized
                 + ("_pn" if tle_set.normalize_power else "")  # power normalized
+                + ("_ip" if tle_set.interpolate else "")
             )
             for tle_set in plotting_settings
         ]
@@ -785,12 +805,6 @@ class Laserplot:
 
             os.chdir(cwd)
 
-        return
-        plt.show()
-        plt.close()
-        plt.cla()
-        plt.clf()
-
     def update_live_plot(self, i, messdata):
         """Plottet die aktuell gemessene Messung."""
 
@@ -808,6 +822,7 @@ class Laserplot:
         # print(snr)
 
         curr_measurement_index = messdata.curr_measurement_index
+        curr_gradiant = messdata.curr_gradiant
 
         if (
             len(measurements) == 0
@@ -816,7 +831,7 @@ class Laserplot:
         ):
             return
 
-        measurement = measurements[curr_measurement_index]
+        measurement = measurements[curr_gradiant][curr_measurement_index]
 
         label = f"Spektrum von Messung {curr_measurement_index + 1}"
         self.live_ax.clear()
