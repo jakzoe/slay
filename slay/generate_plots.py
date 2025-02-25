@@ -12,6 +12,9 @@ delete_old_pictures = True
 # um schnell bestimmtes zu exkludieren
 plot_general = True
 plot_fluo = True
+plot_interpolate_only = False
+dont_plot_interpolate = False
+assert (plot_interpolate_only and dont_plot_interpolate) is False
 plot_time_slices = True
 
 # nur bestimmtes plotten. Leer ist disable (alles plotten). Enthält Keyword, welches in dem Namen sein muss.
@@ -42,7 +45,7 @@ def make_plots(path, name):
 
     # Fluoreszenz-Peak plotten (ca. zwischen 720 und 740 nm bei Chlorophyll)
     if plot_fluo:
-        curr_len = len(p_settings)
+        first_len = len(p_settings)
         p_settings.extend(
             (
                 [
@@ -59,7 +62,7 @@ def make_plots(path, name):
                         path,
                         name,
                         smooth=True,
-                        single_wav=750,
+                        single_wav=740,
                         scatter=True,
                     )
                 ],
@@ -68,16 +71,25 @@ def make_plots(path, name):
                         path,
                         name,
                         smooth=True,
-                        single_wav=740,
+                        single_wav=750,
                         scatter=True,
                     )
                 ],
             )
         )
-        for i in range(curr_len, len(p_settings)):
-            inte_setting = copy.deepcopy(p_settings[i][0])
-            inte_setting.interpolate = True
-            p_settings.append([inte_setting])
+        last_len = len(p_settings)
+        if not dont_plot_interpolate:
+            for i in range(first_len, last_len):
+                inte_setting = copy.deepcopy(p_settings[i][0])
+                inte_setting.interpolate = True
+                p_settings.append([inte_setting])
+
+        if plot_interpolate_only:
+            remove_setings = []
+            for i in range(first_len, last_len):
+                remove_setings.append(p_settings[i])
+            for setting in remove_setings:
+                p_settings.remove(setting)
 
     # # einzelne Zeitabschnitte plotten
     if plot_time_slices:
