@@ -70,9 +70,10 @@ run_docker_with_device() {
   return $?
 }
 
-# to figure out USB0 vs USB1: udevadm info -n /dev/ttyUSB0 or udevadm info -q property --property=ID_VENDOR_ID --value -n /dev/ttyUSB0 , productid is ID_MODEL_ID
+# udevadm info -n /dev/ttyUSB0 or udevadm info -q property --property=ID_VENDOR_ID --value -n /dev/ttyUSB0 , productid is ID_MODEL_ID
 
-
+# in my case, to prevent the PC from shutting down after a certain period of inactivity
+pkill hypridle
 # IDs of the spectrometer and the IDs of the device that is created after init of the spectrometer
 run_docker_with_device "$(lsusb  -d 04b4:8613)"
 run_docker_with_device "$(lsusb  -d 0bd7:a012)"
