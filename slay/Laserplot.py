@@ -60,6 +60,9 @@ class Laserplot:
         marker_size: int = 4
         time_plot: bool = False
         interpolate: bool = False
+        num_others: int = (
+            0  # wie viele andere Graphen ebenfalls noch in den Plot kommen
+        )
 
     def __init__(self):
 
@@ -371,8 +374,11 @@ class Laserplot:
         # Achsenbeschriftung alle 100 nm
         if not settings.time_plot:
             settings.ax.xaxis.set_major_locator(MultipleLocator(100))
-        settings.ax.tick_params(axis="both", labelsize=8)
-
+        # durch die Legende ist weniger Platz, der Plot wird kleiner, die ticks überlappen ansonsten
+        if settings.num_others == 0:
+            settings.ax.tick_params(axis="both", labelsize=8)
+        else:
+            settings.ax.tick_params(axis="both", labelsize=6)
         # weniger Weiß an den Rändern. Überschreibt aber constrained layout
         # fig.tight_layout()
 
@@ -705,6 +711,7 @@ class Laserplot:
                     scatter=setting.scatter,
                     time_plot=time_plot,
                     interpolate=setting.interpolate,
+                    num_others=len(plotting_settings) - 1,
                 )
                 collide_graph = Laserplot.data_to_plot(graphSettings, collide_graph)
 
