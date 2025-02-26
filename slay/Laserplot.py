@@ -169,9 +169,7 @@ class Laserplot:
         # return False
 
     @staticmethod
-    def data_to_plot(
-        settings: GraphSettings,
-    ):
+    def data_to_plot(settings: GraphSettings, collide_graph=False):
 
         def smooth_curve(array):
             return scipy.signal.savgol_filter(array, window_length=50, polyorder=5)
@@ -390,10 +388,13 @@ class Laserplot:
             settings.ax.legend(**options)
             settings.fig.canvas.draw()
 
-            if Laserplot.legend_collides(
-                settings.ax,
-                settings.x_data,
-                settings.y_data,
+            if (
+                Laserplot.legend_collides(
+                    settings.ax,
+                    settings.x_data,
+                    settings.y_data,
+                )
+                or collide_graph
             ):
 
                 # ist in Pixeln
@@ -433,6 +434,11 @@ class Laserplot:
                     settings.ax.legend(**options)
                     settings.fig.canvas.draw()
 
+                # der Graph hat Funktionen, die mit der Legende kollidieren
+                return True
+            # der Graph hat aktuell noch keine Funktionen, die mit der Legende kollidieren
+            return False
+
     @staticmethod
     def plot_results(
         plotting_settings: list[PlottingSettings],
@@ -468,6 +474,8 @@ class Laserplot:
         fig, ax = plt.subplots()  # plt.subplots(layout="constrained")
         # werden nicht immer benutz, daher nur bei Bedarf erstellen (damit keine leeren Plots erstelltt werden)
         fig_colorful, ax_colorful = (None, None)
+        # ob es Graphen in dem Plot gibt, die mit der Legende kollidieren, wenn diese nicht außerhalb des Plots ist
+        collide_graph = False
 
         # plt.grid(True)
         if USE_GRID:
@@ -698,7 +706,7 @@ class Laserplot:
                     time_plot=time_plot,
                     interpolate=setting.interpolate,
                 )
-                Laserplot.data_to_plot(graphSettings)
+                collide_graph = Laserplot.data_to_plot(graphSettings, collide_graph)
 
                 if not multiple_plots and not setting.single_wav:
                     if fig_colorful is None and ax_colorful is None:
