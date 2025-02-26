@@ -7,22 +7,48 @@ import shutil
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
 import copy
+from pathlib import Path
+
 
 delete_old_pictures = True
 # um schnell bestimmtes zu exkludieren
 plot_general = True
 plot_fluo = True
 plot_interpolate_only = False
-dont_plot_interpolate = False
+dont_plot_interpolate = True
 assert (plot_interpolate_only and dont_plot_interpolate) is False
 plot_time_slices = True
 
 # nur bestimmtes plotten. Leer ist disable (alles plotten). Enthält Keyword, welches in dem Namen sein muss.
-plot_list = [
-    # "Gradiant"
-    # "Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Mit_Absatz_Aber_Also_Doof"
-]  # ["Bodensatz"]
-blacklist = False  # black- oder whitelist
+plot_list = ["Gradiant", "Tageslicht", "Neutral"]
+blacklist = True  # black- oder whitelist
+
+
+def sync_messungen_pics():
+
+    # #!/bin/bash
+    # rm -r messungen_pics/
+    # # damit die Bilder die gleiche Struktur behalten
+    # rsync -av --exclude='*.npz' --exclude='*.json' messungen/ messungen_pics/
+    messungen_pics_path = Path("messungen_pics")
+    if messungen_pics_path.exists():
+        shutil.rmtree(messungen_pics_path)
+
+    source = Path("messungen")
+    destination = Path("messungen_pics")
+
+    for root, dirs, files in os.walk(source):
+        rel_path = Path(root).relative_to(source)
+        dest_dir = destination / rel_path
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        for file in files:
+            if file.endswith(".npz") or file.endswith(".json"):
+                continue
+
+            src_file = Path(root) / file
+            dest_file = dest_dir / file
+            shutil.copy2(src_file, dest_file)
 
 
 def make_plots(path, name):
@@ -173,12 +199,6 @@ if __name__ == "__main__":
     tasks = []
 
     for path in paths:
-        # ob das Element in der white/blacklist ist
-        if plot_list and (
-            (blacklist and any(ele in path for ele in plot_list))
-            or (not blacklist and any(ele not in path for ele in plot_list))
-        ):
-            continue
 
         names = [
             os.path.splitext(f)[0]
@@ -192,6 +212,14 @@ if __name__ == "__main__":
             ]
             for pic_name in pic_names:
                 os.remove(os.path.join(path, pic_name + ".png"))
+
+        # ob das Element in der white/blacklist ist
+        if plot_list and (
+            (blacklist and any(ele in path for ele in plot_list))
+            or (not blacklist and any(ele not in path for ele in plot_list))
+        ):
+            print(f"skipping {path}")
+            continue
 
         for name in names:
             tasks.append((path, name))
@@ -218,6 +246,7 @@ if __name__ == "__main__":
 
     print(f"took: {time.time() - start_time:.2f} s")
 
+    sync_messungen_pics()
     # 12: took: 44.83 s
     # 8: took: 49.54 s
     # 4: took: 83.07 s
