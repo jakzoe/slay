@@ -168,6 +168,7 @@ class MeasurementSettings:
     FUELLL_MENGE: int = (
         0  # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0
     )
+    SAUERSTOFF_ZUFUHR: bool = False
 
     def save_as_json(self, json_file):
         json.dump(asdict(self), json_file, indent=4)
