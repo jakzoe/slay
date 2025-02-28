@@ -362,11 +362,11 @@ class Laserplot:
             settings.ax.set_xlim(
                 settings.x_data[0] - puffer, settings.x_data[-1] + puffer
             )
-        # so machen, dass immer noch das Label oben hinpasst
+
         settings.ax.set_ylim(
             max(0, min(line_data), settings.ax.get_ylim()[0]),
             max(max(line_data), 2000, settings.ax.get_ylim()[1]),
-        )  # * 1.05
+        )
 
         # ax.set_ylim(1500, max(measurement))
         # ax.set_xlim(350, 600)
@@ -535,6 +535,75 @@ class Laserplot:
                     "The specified number of gradients exceeds the number of gradients in the measurement."
                 )
 
+            if orig_setting.grad_end - orig_setting.grad_start > 1:
+                fig3d, ax3d = plt.subplots(subplot_kw={"projection": "3d"})
+                # TODO: die Werte nutzen
+                Y = np.array(list(range(orig_setting.grad_end)))[
+                    orig_setting.grad_start : orig_setting.grad_end
+                ]
+                X = x_data
+                X, Y = np.meshgrid(X, Y)
+                Z = np.mean(
+                    spectrometer_data_gradient[
+                        orig_setting.grad_start : orig_setting.grad_end
+                    ],
+                    axis=1,
+                    dtype=float,
+                )
+                ax3d.plot_surface(
+                    X,
+                    Y,
+                    Z,
+                    cmap=plt.get_cmap("coolwarm"),
+                    linewidth=0,
+                    antialiased=False,
+                    edgecolor="none",
+                    rstride=1,  # alle Datenpunkte anzeigen
+                    cstride=2,  # jeden zweiten Datenpunkt anzeigen (mit jedem Datenpunkt plottet es nicht)
+                )
+                ax3d.set_xlabel("Wellenlänge (nm)")
+                ax3d.set_ylabel("Gradient-Index")
+                ax3d.set_zlabel("Intensität (Counts)")
+                # ax3d.secondary_yaxis(location=0).set_yticks(
+                #     [1, 3, 7], labels=["\nOughts", "\nTeens", "\nTwenties"]
+                # )
+
+                # import plotly.graph_objects as go
+
+                # fig3d = go.Figure(data=[go.Surface(z=Z, x=X, y=Y)])
+                # fig3d.update_layout(
+                #     title=dict(text="Mt Bruno Elevation"),
+                #     autosize=False,
+                #     width=500,
+                #     height=500,
+                #     margin=dict(l=65, r=50, b=65, t=90),
+                # )
+
+                # # # mit Contours
+                # # fig3d = go.Figure(data=[go.Surface(z=Z)])
+                # # fig3d.update_traces(
+                # #     contours_z=dict(
+                # #         show=True,
+                # #         usecolormap=True,
+                # #         highlightcolor="limegreen",
+                # #         project_z=True,
+                # #     )
+                # # )
+                # # fig3d.update_layout(
+                # #     title=dict(text="Mt Bruno Elevation"),
+                # #     autosize=False,
+                # #     scene_camera_eye=dict(x=1.87, y=0.88, z=-0.64),
+                # #     width=500,
+                # #     height=500,
+                # #     margin=dict(l=65, r=50, b=65, t=90),
+                # # )
+
+                # # fig.show()
+                # fig3d.write_image("fig1.png")
+
+            else:
+                fig3d, ax3d = (None, None)
+
             for grad_index in range(orig_setting.grad_start, orig_setting.grad_end):
 
                 spectrometer_data = spectrometer_data_gradient[grad_index]
@@ -569,7 +638,12 @@ class Laserplot:
                 setting.interval_end = (
                     len(spectrometer_data)
                     if setting.interval_end_time == sys.maxsize
-                    else (np.abs(time_stamps - setting.interval_end_time)).argmin()
+                    else (
+                        (np.abs(time_stamps - setting.interval_end_time)).argmin()
+                        # falls es nur eine repetition gab und somit nur eine einzige Zeit
+                        if setting.interval_end_time != 0
+                        else 1
+                    )
                 )
 
                 # von Wellenlänge in Index umrechnen
@@ -786,10 +860,16 @@ class Laserplot:
         figures = [fig]
         paths = [root_plot_dir + "neutral/"]
         suffixes = [""]
+
         if not multiple_plots and not setting.single_wav:
             figures.append(fig_colorful)
             paths.append(root_plot_dir + "colorful/")
-            paths.append("_colorful")
+            suffixes.append("_colorful")
+
+        if fig3d is not None and ax3d is not None:
+            figures.append(fig3d)
+            paths.append(root_plot_dir + "3d/")
+            suffixes.append("_3d")
 
         for fig, path, suffix in zip(figures, paths, suffixes):
             fig.savefig(
