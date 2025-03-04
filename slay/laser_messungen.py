@@ -32,11 +32,12 @@ if __name__ == "__main__":
 
     measurement_settings = MeasurementSettings(
         UNIQUE=True,
-        TYPE="Chlorophyll_Unfokussiert",  # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Blub # Neutral_Mit_Spiegel # Mittel_Bier_Indirekt # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Blub # Radieschen_Direkt_Unfokussiert # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Nur_Bodensatz_Also_Toll
+        TYPE="Chloro_Jufo",  # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Blub # Neutral_Mit_Spiegel # Mittel_Bier_Indirekt # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Blub # Radieschen_Direkt_Unfokussiert # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Nur_Bodensatz_Also_Toll
         FENSTER_KUEVETTE=2,
         TIMEOUT=1000000,  # disable
         WATCHDOG_GRACE=200,
         FUELLL_MENGE=3,  # in ml
+        OXYGEN_SPEED=50,  # cm^3 / min
         specto=MeasurementSettings.SpectoSettings(
             INTTIME=10000,  # int(1000 * 60 * 0.5),
             SCAN_AVG=1,
@@ -45,13 +46,13 @@ if __name__ == "__main__":
             AMPLIFICATION=False,
         ),
         laser=MeasurementSettings.LaserSettings(
-            REPETITIONS=360,
+            REPETITIONS=100,
             MEASUREMENT_DELAY=3,
             IRRADITION_TIME=3,
             ARDUINO_DELAY=3,
             INTENSITY_NKT="0",  # "np.linspace(0, 1, 10)",  # in Prozent von 0 bis 1 #
             INTENSITY_405="255",  # kaum noch sichtbar unter 60
-            NUM_PULSES_445="1234",  # 1234 heißt kein PWM
+            NUM_PULSES_445="200",  # range(0, 200, 20) # 1234 heißt kein PWM
             PULSE_DELAY_445="1",
             REPETITIONS_LTB="0",
             INTENSITY_LTB="0",
@@ -59,6 +60,7 @@ if __name__ == "__main__":
             ND_405=0,
             ND_445=0,
             CONTINOUS=True,
+            FOCUS_DIST=0,
         ),
     )
     # TODO: alle paar Sekunden Messergebnisse zwischenspeichern (Daten von einem separaten Process kopieren und speichern)

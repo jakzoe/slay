@@ -15,13 +15,13 @@ delete_old_pictures = True
 plot_general = True
 plot_fluo = True
 plot_interpolate_only = False
-dont_plot_interpolate = True
+dont_plot_interpolate = False
 assert (plot_interpolate_only and dont_plot_interpolate) is False
 plot_time_slices = True
 
 # nur bestimmtes plotten. Leer ist disable (alles plotten). Enthält Keyword, welches in dem Namen sein muss.
-plot_list = ["Gradiant", "Tageslicht", "Neutral"]
-blacklist = True  # black- oder whitelist
+plot_list = []  # ["Gradiant", "Tageslicht", "Neutral"]
+blacklist = False  # black- oder whitelist
 
 
 def sync_messungen_pics():
@@ -101,6 +101,22 @@ def make_plots(path, name):
                         scatter=True,
                     )
                 ],
+                [
+                    # PlottingSettings(
+                    #     path,
+                    #     name,
+                    #     smooth=True,
+                    #     single_wav=750,
+                    #     scatter=True,
+                    # ),
+                    PlottingSettings(
+                        path,
+                        name,
+                        smooth=True,
+                        single_wav=530,
+                        scatter=True,
+                    ),
+                ],
             )
         )
         last_len = len(p_settings)
@@ -156,9 +172,11 @@ def make_plots(path, name):
         Laserplot.plot_results(p, m_settings, show_plots=False)
 
     sys.stdout.flush()
+    # sys.stderr.flush()
     output = sys.stdout.getvalue()
     sys.stdout = original_stdout
     print(output)
+    # print(sys.stderr.getvalue())
 
 
 if __name__ == "__main__":
@@ -218,7 +236,7 @@ if __name__ == "__main__":
             (blacklist and any(ele in path for ele in plot_list))
             or (not blacklist and any(ele not in path for ele in plot_list))
         ):
-            print(f"skipping {path}")
+            # print(f"skipping {path}")
             continue
 
         for name in names:

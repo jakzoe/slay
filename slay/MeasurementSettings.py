@@ -29,12 +29,12 @@ class MeasurementSettings:
         ND_405: int
         ND_445: int
         CONTINOUS: bool  # Laser durchgängig angeschaltet lassen oder nicht
-        INTENSITY_LTB: str = (
-            "0"  # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0
-        )
-        REPETITIONS_LTB: str = (
-            "0"  # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0
-        )
+        # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0
+        INTENSITY_LTB: str = "0"
+        # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0
+        REPETITIONS_LTB: str = "0"
+        # # z. B. mit einem Blatt testen, wie weit der Fokuspunkt der Diodenlaser von der Küvette entfernt sind
+        FOCUS_DIST: int = 0
 
         def __post_init__(self):
             self.convert_string_values()
@@ -168,7 +168,7 @@ class MeasurementSettings:
     FUELLL_MENGE: int = (
         0  # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0
     )
-    SAUERSTOFF_ZUFUHR: bool = False
+    OXYGEN_SPEED: int = 0  # wie viel Luft pro Minute gepumpt wird.
 
     def save_as_json(self, json_file):
         json.dump(asdict(self), json_file, indent=4)
