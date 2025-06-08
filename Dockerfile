@@ -51,14 +51,17 @@ FROM base AS debug
 RUN /usr/local/bin/pip3 install debugpy
 RUN /usr/local/bin/pip3 install pip-licenses
 
-ENTRYPOINT ["/bin/sh", "-c", "pip-licenses --python=/usr/local/bin/python3; /usr/local/bin/python3 -m debugpy --listen 0.0.0.0:5678 --wait-for-client slay/laser_messungen.py"]
+# pip-licenses --python=/usr/local/bin/python3;
+ENTRYPOINT ["/bin/sh", "-c", "/usr/local/bin/python3 -m debugpy --listen 0.0.0.0:5678 --wait-for-client examples/run_measurement.py"]
 
 
 FROM base AS release
 
+# finding the src dir
+ENV PYTHONPATH="$PYTHONPATH:$INSTALL_PATH"
 # exec form
 #ENTRYPOINT ["/usr/local/bin/python3", "nkt.py"]
-ENTRYPOINT ["/usr/local/bin/python3", "slay/laser_messungen.py"]
+ENTRYPOINT ["/usr/local/bin/python3", "examples/run_measurement.py"]
 
 # # shell form
 # SHELL ["/bin/bash", "-c"]

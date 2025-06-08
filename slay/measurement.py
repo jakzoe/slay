@@ -1,12 +1,12 @@
-from multiprocessing import Process
 from slay.spectrum_plot import SpectrumPlot
 from slay.settings import PlotSettings
+from slay.settings import MeasurementSettings
 
 from slay.lasers import NKT
 from slay.lasers import LTB
 
-from slay.settings import MeasurementSettings
 
+from multiprocessing import Process
 import traceback
 import serial
 import sys
@@ -78,7 +78,7 @@ class Measurement:
 
             # exit()
             print("Running in debug-mode.\n")
-            from virtual import Spectrometer as sn
+            from slay.virtual import Spectrometer as sn
 
             DEBUG = True
 

@@ -218,19 +218,19 @@ class Spectrometer:
         return -1
 
     # sn.ext_trig(spectrometer, True)
-    def ext_trig(self, arg, *args, **kwargs):
+    def ext_trig(self, *args, **kwargs):
         pass
 
     # sn.setParam(spectrometer, INTTIME, SCAN_AVG, SMOOTH, XTIMING, True)
-    def setParam(self, arg, *args, **kwargs):
+    def setParam(self, *args, **kwargs):
         pass
 
     # var = sn.array_spectrum(spectrometer, wav)
-    def array_spectrum(self, arg, *args, **kwargs):
+    def array_spectrum(self, *args, **kwargs):
         return np.random.rand(2048, 2) * 100
 
     # var = sn.getSpectrum_Y(spectrometer)
-    def getSpectrum_Y(self, arg, *args, **kwargs):
+    def getSpectrum_Y(self, *args, **kwargs):
         # return np.abs(
         #     np.random.rand(
         #         2048,
@@ -251,5 +251,5 @@ class Spectrometer:
         )
 
     # sn.reset(spectrometer)
-    def reset(self, arg, *args, **kwargs):
+    def reset(self, *args, **kwargs):
         pass

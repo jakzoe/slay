@@ -31,7 +31,7 @@ except IndexError:
 if __name__ == "__main__":
 
     measurement_settings = MeasurementSettings(
-        UNIQUE=True,
+        UNIQUE=False,
         TYPE="Chloro_Jufo",  # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Blub # Neutral_Mit_Spiegel # Mittel_Bier_Indirekt # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Blub # Radieschen_Direkt_Unfokussiert # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Nur_Bodensatz_Also_Toll
         FENSTER_KUEVETTE=2,
         TIMEOUT=1000000,  # disable
@@ -53,7 +53,7 @@ if __name__ == "__main__":
             INTENSITY_NKT="0",  # "np.linspace(0, 1, 10)",  # in Prozent von 0 bis 1 #
             INTENSITY_405="255",  # kaum noch sichtbar unter 60
             NUM_PULSES_445="200",  # range(0, 200, 20) # 1234 heißt kein PWM
-            PULSE_DELAY_445="1",
+            PULSE_DELAY_445="100",
             REPETITIONS_LTB="0",
             INTENSITY_LTB="0",
             ND_NKT=0,
