@@ -11,13 +11,13 @@ uint16_t pwmFreq405 = 2000; // 80_000_000 / 2**14 = 4882.8125, aber ab 4.5 kHz g
 // geht theoretisch bis 14, dann funktioniert es aber ab ca. 75 Prozent Duty nicht mehr.
 // (zumindest bei dem 405 nm Laser sind zwar bei dem TTL-Eingang auch 14 bit möglich,
 // bei einer direkten Steuerung des Stroms mittels eines MOSFETs aber nicht. Ggf. liegt das auch an dem MOSFET IRF510N)
-uint16_t pwmResBits405 = 13;
+uint8_t pwmResBits405 = 13;
 uint16_t maxDutyVal405 = (uint16_t)(pow(2, pwmResBits405) - 1);
 uint16_t pwmDutyVal405 = 0;
 
 #define PWM_CHANNEL_445 4
 uint16_t pwmFreq445 = 2000;
-uint16_t pwmResBits445 = 13;
+uint8_t pwmResBits445 = 13;
 uint16_t maxDutyVal445 = (uint16_t)(pow(2, pwmResBits445) - 1);
 uint16_t pwmDutyVal445 = 0;
 
@@ -54,6 +54,8 @@ bool continuousMeasurement = true;
 // (wenn das Timeout verstrichen ist, wird angenommen, dass die Verbindung zur Steuersoftware unterbrochen wurde und kein laserOff Signal mehr empfangen werden kann)
 unsigned long expectedDelay = 0;
 unsigned long lastUpdateTime = 0;
+
+bool lasersAreOn = false;
 
 void readSerial();
 void setLED(byte r, byte g, byte b);
@@ -110,8 +112,6 @@ void setup()
   // use default 8 bits 1 stop bit, no parity
   LaserSerial.begin(115200, SERIAL_8N1, 20, 21);
   LaserSerial.flush();
-  LaserSerial.println("TEST");
-  LaserSerial.begin(115200, SERIAL_8N1, 20, 21);
 
   // // TEST
   // turnLasersOn();
@@ -122,13 +122,13 @@ void loop()
   // int potiValue = readPoti();
   // int mapping = map(readPoti(), 0, 4095, 0, maxDutyVal405);
   // ledcWrite(LASER_PIN_445, mapping);
-  // ledcWrite(LASER_PIN_405, maxDutyVal405);
-  // // LaserSerial.println("Poti Value:");
-  // // LaserSerial.println(potiValue);
-  // // delay(10);
-  // // LaserSerial.println(mapping);
-  // // delay(10);
-  // // LaserSerial.println(maxDutyVal405);
+  // // ledcWrite(LASER_PIN_405, maxDutyVal405);
+  // LaserSerial.println("Poti Value:");
+  // LaserSerial.println(potiValue);
+  // delay(10);
+  // LaserSerial.println(mapping);
+  // delay(10);
+  // LaserSerial.println(maxDutyVal405);
   // delay(20);
   // return;
 
@@ -136,7 +136,7 @@ void loop()
   readSerial();
 
   // watchdog
-  if (millis() - lastUpdateTime >= expectedDelay)
+  if (lasersAreOn && millis() - lastUpdateTime >= expectedDelay)
   {
     turnLasersOff();
     mode = '0';
@@ -233,14 +233,14 @@ void readSerial()
       varValueData[i] = varSerialData[SERIAL_DATA_PREFIX_LENGTH + i];
     }
 
-    if (strcmp(varNameData, "Cyc405") == 0)
+    if (strcmp(varNameData, "Dut405") == 0)
     {
       pwmDutyVal405 = atoi(varValueData);
       ledcWrite(LASER_PIN_405, pwmDutyVal405);
       // LaserSerial.println("Setting pwmDutyVal405");
       // LaserSerial.println(pwmDutyVal405, DEC);
     }
-    else if (strcmp(varNameData, "Cyc445") == 0)
+    else if (strcmp(varNameData, "Dut445") == 0)
     {
       pwmDutyVal445 = atoi(varValueData);
       if (!DISABLE_PWM_445)
@@ -359,6 +359,7 @@ void disableLocks()
 void turnLasersOn()
 {
 
+  lasersAreOn = true;
   disableLocks();
 
   ledcAttachChannel(LASER_PIN_405, pwmFreq405, pwmResBits405, PWM_CHANNEL_405);
@@ -383,6 +384,7 @@ void turnLasersOff()
 {
   enableLocks();
   lastUpdateTime = millis();
+  lasersAreOn = false;
 }
 
 // median filter
