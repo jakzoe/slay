@@ -1,13 +1,21 @@
 #!/bin/bash
 
 get_tty_path() {
-
   local VENDOR_ID="$1"
   local PRODUCT_ID="$2"
+  local SERIAL_ID="$3"
 
   DEVICE_PATH=$(for device in /dev/ttyUSB*; do
-    if udevadm info -a -n "$device" | grep -q "ATTRS{idVendor}==\"$VENDOR_ID\"" && udevadm info -a -n "$device" | grep -q "ATTRS{idProduct}==\"$PRODUCT_ID\""; then
-      echo "$device"
+    if udevadm info -a -n "$device" | grep -q "ATTRS{idVendor}==\"$VENDOR_ID\"" &&
+       udevadm info -a -n "$device" | grep -q "ATTRS{idProduct}==\"$PRODUCT_ID\""; then
+
+      if [ -n "$SERIAL_ID" ]; then
+        if udevadm info -a -n "$device" | grep -q "ATTRS{serial}==\"$SERIAL_ID\""; then
+          echo "$device"
+        fi
+      else
+        echo "$device"
+      fi
     fi
   done)
 
@@ -16,20 +24,20 @@ get_tty_path() {
   else
     echo ""
   fi
-
 }
+
 
 run_docker_with_device() {
   local input="$1"
   local bus=$(echo "$input" | awk '{print $2}' | sed 's/://')
   local device=$(echo "$input" | awk '{print $4}' | sed 's/://')
   local spec_path="/dev/bus/usb/$bus/$device"
-  # serial_path=$(get_tty_path "1a86" "7523") # Arduino
-  serial_path=$(get_tty_path "0403" "6001") # FT232 Serial
+  # serial_path=$(get_tty_path "1a86" "7523") # Arduino (not used anymore)
+  serial_path=$(get_tty_path "0403" "6001" "A5069RR4") # FT232 Serial
   nkt_path=$(get_tty_path "10c4" "ea60")
-  # the LTB uses an FT232 too, it seems, thus having the same IDs....
-  # changing for debugging purposes
-  ltb_path=$(get_tty_path "42" "42")
+  # the LTB uses an FT232 too, it seems, thus having the same IDs, Thus checking for iSerial too
+  # (lsusb -v -d 0403:6001 | grep iSerial)
+  ltb_path=$(get_tty_path "0403" "6001" "FTDD2M08")
 
    local devices=""
 
@@ -58,7 +66,7 @@ run_docker_with_device() {
   fi
 
   if [[ ! -c "$spec_path" ]]; then
-    # echo "character device file does not exist"
+    echo "Could not find the spectrometer. Exiiting."
     return 1
   fi
 
