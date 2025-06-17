@@ -7,10 +7,12 @@ from slay.settings import MeasurementSettings
 class TestReadSettings(unittest.TestCase):
 
     def setUp(self):
+        # neues Format und neue Namen, muss ich noch zu Ende ändern
+        assert False
         self.settings = MeasurementSettings(
             UNIQUE=True,
             TYPE="Test",
-            FENSTER_KUEVETTE=1,
+            CUVETTE_WINDOWS=1,
             TIMEOUT=10,
             WATCHDOG_GRACE=5,
             specto=MeasurementSettings.SpectoSettings(
@@ -20,17 +22,20 @@ class TestReadSettings(unittest.TestCase):
                 REPETITIONS=5,
                 MEASUREMENT_DELAY=100,
                 IRRADITION_TIME=200,
-                ARDUINO_DELAY=50,
+                SERIAL_DELAY=50,
                 INTENSITY_NKT=1.5,
-                INTENSITY_405=3,
-                NUM_PULSES_445=7,
-                PULSE_DELAY_445=25,
+                PWM_FREQ_405=2000,
+                PWM_RES_BITS_405=13,
+                PWM_DUTY_PERC_405=42,
+                PWM_FREQ_445=2000,
+                PWM_RES_BITS_445=13,
+                PWM_DUTY_PERC_445=42,
                 ND_NKT=0,
                 ND_405=1,
                 ND_445=2,
                 CONTINOUS=False,
             ),
-            FUELLL_MENGE=0,
+            FILLING_QUANTITY=0,
         )
 
         self.settings_as_json = {
@@ -54,7 +59,7 @@ class TestReadSettings(unittest.TestCase):
                 "ND_445": 2,
                 "CONTINOUS": False,
             },
-            "FUELLL_MENGE": 0,
+            "FILLING_QUANTITY": 0,
         }
 
     def test_save_as_json(self):
@@ -79,7 +84,7 @@ class TestReadSettings(unittest.TestCase):
 
     def test_from_json_with_missing(self):
         json_data_with_removed = self.settings_as_json.copy()
-        json_data_with_removed.pop("FUELLL_MENGE")
+        json_data_with_removed.pop("FILLING_QUANTITY")
 
         with NamedTemporaryFile(delete=False, mode="w") as temp_file:
             json.dump(json_data_with_removed, temp_file)

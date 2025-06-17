@@ -24,9 +24,12 @@ run_docker_with_device() {
   local bus=$(echo "$input" | awk '{print $2}' | sed 's/://')
   local device=$(echo "$input" | awk '{print $4}' | sed 's/://')
   local spec_path="/dev/bus/usb/$bus/$device"
-  arduino_path=$(get_tty_path "1a86" "7523")
+  # serial_path=$(get_tty_path "1a86" "7523") # Arduino
+  serial_path=$(get_tty_path "0403" "6001") # FT232 Serial
   nkt_path=$(get_tty_path "10c4" "ea60")
-  ltb_path=$(get_tty_path "0403" "6001")
+  # the LTB uses an FT232 too, it seems, thus having the same IDs....
+  # changing for debugging purposes
+  ltb_path=$(get_tty_path "42" "42")
 
    local devices=""
 
@@ -36,10 +39,10 @@ run_docker_with_device() {
     spec_path="none"
   fi
 
-  if [ -n "$arduino_path" ]; then
-    devices+="--device=$arduino_path "
+  if [ -n "$serial_path" ]; then
+    devices+="--device=$serial_path "
   else
-    arduino_path="none"
+    serial_path="none"
   fi
 
   if [ -n "$nkt_path" ]; then
@@ -59,6 +62,12 @@ run_docker_with_device() {
     return 1
   fi
 
+  echo "Using serial: $serial_path"
+  echo "Using NKT: $nkt_path"
+  echo "Using LTB: $ltb_path"
+  echo "Using spectrometer: $spec_path"
+  echo
+
   # port for attaching debugger
   docker run -v /home/user/slay/myproject/slay:/root/slay \
     -e "DISPLAY=$DISPLAY" \
@@ -67,7 +76,7 @@ run_docker_with_device() {
     --rm \
     -p 5678:5678 \
     $devices \
-    laserdocker "$arduino_path" "$nkt_path" "$ltb_path"
+    laserdocker "$serial_path" "$nkt_path" "$ltb_path"
     
   return $?
 }

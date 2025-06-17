@@ -21,11 +21,20 @@ class MeasurementSettings:
         REPETITIONS: int  # wie häufig eine Messung wiederholt wird
         MEASUREMENT_DELAY: int  # ms, die zwischen jeder Messung gewartet werden sollen
         IRRADITION_TIME: int  # ms, die auf das Chlorophyll gestrahlt wird. Mind. 3 ms, ist sonst zu schnell für den Arduino
-        ARDUINO_DELAY: int  # ms, die auf den Arduino gewartet wird. Mind. 3 ms, ist sonst zu schnell für den Arduino
-        INTENSITY_NKT: str  # in Prozent
-        INTENSITY_405: str  # PWM-Signal des Arduinos (0-255)
-        NUM_PULSES_445: str  # Pulse, die der Arduino sendet. In Clock-Zyklen.
-        PULSE_DELAY_445: str  # Pause zwischen den Pulsen
+        SERIAL_DELAY: int  # ms, die auf den MCU gewartet wird. Mind. 3 ms, ist sonst zu schnell für den Arduino
+        INTENSITY_NKT: str  # in Prozent bis 1
+
+        PWM_FREQ_405: str
+        PWM_RES_BITS_405: str
+        PWM_DUTY_PERC_405: str  # in Prozent bis 1, wird später in Counts umgerechnet
+
+        PWM_FREQ_445: str
+        PWM_RES_BITS_445: str
+        PWM_DUTY_PERC_445: str
+        # INTENSITY_405: str  # PWM-Signal
+        # NUM_PULSES_445: str  # Pulse, die der Arduino sendet. In Clock-Zyklen.
+        # PULSE_DELAY_445: str  # Pause zwischen den Pulsen
+
         ND_NKT: int  # ND-Wert des Filters, der dazwischen ist
         ND_405: int
         ND_445: int
@@ -162,14 +171,14 @@ class MeasurementSettings:
 
     UNIQUE: bool  # neue Messungen überschreiben alte Messungen, wenn sie keinen eindeutigen Namen haben
     TYPE: str  # Name der Messung
-    FENSTER_KUEVETTE: (
+    CUVETTE_WINDOWS: (
         int  # Anzahl der Fenster der verwendeten Küvette. Normalerweise zwei oder vier.
     )
     TIMEOUT: int  # Sekunden, nach denen die Messung, unabhängig von REPETITIONS, beendet werden soll
     WATCHDOG_GRACE: int  # besteht für eine bestimmte Zeit keine Kommunikation zwischen Arduino und Software: Abbruch
     specto: SpectoSettings
     laser: LaserSettings
-    FUELLL_MENGE: int = (
+    FILLING_QUANTITY: int = (
         0  # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0
     )
     OXYGEN_SPEED: int = 0  # wie viel Luft pro Minute gepumpt wird.

@@ -56,7 +56,7 @@ class Measurement:
 
     def __init__(
         self,
-        arduino_path: str,
+        serial_path: str,
         nkt_path: str,
         ltb_path: str,
         MEASUREMENT_SETTINGS: MeasurementSettings,
@@ -87,7 +87,7 @@ class Measurement:
 
         self.MEASUREMENT_SETTINGS = MEASUREMENT_SETTINGS
         self.spectrometer_setup()
-        self.arduino_setup(arduino_path, 3)  # 1 ist definitiv zu kurz (getestet)
+        self.mcu_setup(serial_path, wait=3)  # 1 ist definitiv zu kurz (getestet)
 
         self.nkt = NKT(nkt_path)
         # erst später anschalten
@@ -108,25 +108,55 @@ class Measurement:
 
     def set_laser_powers(self, index):
 
-        self.set_arduino_variable(
-            "PWM405", self.MEASUREMENT_SETTINGS.laser.INTENSITY_405[index]
+        max_pwm_counts_445 = (
+            pow(2, self.MEASUREMENT_SETTINGS.laser.PWM_RES_BITS_445[index]) - 1
         )
-        self.set_arduino_variable(
-            "Num445", self.MEASUREMENT_SETTINGS.laser.NUM_PULSES_445[index]
+        max_pwm_counts_405 = (
+            pow(2, self.MEASUREMENT_SETTINGS.laser.PWM_RES_BITS_405[index]) - 1
         )
-        self.set_arduino_variable(
-            "Del445", self.MEASUREMENT_SETTINGS.laser.PULSE_DELAY_445[index]
+
+        assert self.MEASUREMENT_SETTINGS.laser.PWM_DUTY_PERC_405[index] <= 1
+        assert self.MEASUREMENT_SETTINGS.laser.PWM_DUTY_PERC_445[index] <= 1
+        assert self.MEASUREMENT_SETTINGS.laser.INTENSITY_NKT[index] <= 1
+
+        self.set_firmware_variable(
+            "Dut405",
+            int(
+                self.MEASUREMENT_SETTINGS.laser.PWM_DUTY_PERC_405[index]
+                * max_pwm_counts_405
+            ),
         )
-        self.set_arduino_variable(
+        self.set_firmware_variable(
+            "Dut445",
+            int(
+                self.MEASUREMENT_SETTINGS.laser.PWM_DUTY_PERC_445[index]
+                * max_pwm_counts_445
+            ),
+        )
+        self.set_firmware_variable(
+            "Frq405", self.MEASUREMENT_SETTINGS.laser.PWM_FREQ_405[index]
+        )
+        self.set_firmware_variable(
+            "Frq445", self.MEASUREMENT_SETTINGS.laser.PWM_FREQ_445[index]
+        )
+        self.set_firmware_variable(
+            "Res405", self.MEASUREMENT_SETTINGS.laser.PWM_RES_BITS_405[index]
+        )
+        self.set_firmware_variable(
+            "Res445", self.MEASUREMENT_SETTINGS.laser.PWM_RES_BITS_445[index]
+        )
+
+        self.set_firmware_variable(
             "ConMea", int(self.MEASUREMENT_SETTINGS.laser.CONTINOUS)
         )
-        self.set_arduino_variable(
+
+        self.set_firmware_variable(
             "ExpDel",
             (
                 self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY
                 + (
                     self.MEASUREMENT_SETTINGS.laser.IRRADITION_TIME
-                    + self.MEASUREMENT_SETTINGS.laser.ARDUINO_DELAY * 2
+                    + self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY * 2
                     if not self.MEASUREMENT_SETTINGS.laser.CONTINOUS
                     else 0
                 )
@@ -141,7 +171,7 @@ class Measurement:
                 self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY
                 + (
                     self.MEASUREMENT_SETTINGS.laser.IRRADITION_TIME
-                    + self.MEASUREMENT_SETTINGS.laser.ARDUINO_DELAY * 2
+                    + self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY * 2
                     if not self.MEASUREMENT_SETTINGS.laser.CONTINOUS
                     else 0
                 )
@@ -151,13 +181,13 @@ class Measurement:
         )
 
         max_freq = self.nkt.get_register("max_frequency")  # 21502
-        print(f"max freq is {max_freq}")
+        print(f"NKT: max freq is {max_freq}")
         # um auch Bruchteile zu erlauben
         freq = int(
             max_freq / 100 * self.MEASUREMENT_SETTINGS.laser.INTENSITY_NKT[index]
         )
         self.nkt.set_register("pulse_frequency", freq)
-        print(f"Frequenz auf {freq} gesetzt.")
+        print(f"NKT: Frequenz auf {freq} gesetzt.")
         self.nkt.set_register("operating_mode", 4)  # external trigger high signl
 
         self.ltb.set_hv_voltage(self.MEASUREMENT_SETTINGS.laser.INTENSITY_LTB[index])
@@ -165,52 +195,58 @@ class Measurement:
             self.MEASUREMENT_SETTINGS.laser.REPETITIONS_LTB[index]
         )
 
-    def arduino_setup(self, port, wait):
+    def mcu_setup(self, port, wait):
+        """Verbindet sich mit dem ArduMMCUCUino."""
         try:
-            """Verbindet sich mit dem Arduino."""
-            self.arduino = serial.Serial(port=port, baudrate=9600, timeout=5)
-            # auf den Arduino warten
+            self.mcu = serial.Serial(port=port, baudrate=115200, timeout=5)
+            # auf den MCU warten
             time.sleep(wait)
-            self.arduino.flush()
+            self.mcu.flush()
         except serial.serialutil.SerialException as e:
-            print(f"Failed to connect to the Arduino: {e}")
+            print(f"Failed to connect to the MCU: {e}")
 
-            class Arduino:
+            class MCU:
                 def write(self, value):
                     pass
 
-            self.arduino = Arduino()
+            self.mcu = MCU()
 
-    def set_arduino_variable(self, name, value):
-        if (
-            len(str(value)) > 5 and "ExpDel" not in name
-        ):  # int hat fünf chars als Maximum der Dezimalschreibweise. ExpDel ist schon auf long umgestellt (zehn Chars)
+    def set_firmware_variable(self, name, value):
+        # # int hat fünf chars als Maximum der Dezimalschreibweise. ExpDel ist schon auf long umgestellt (zehn Chars)
+        if "ExpDel" not in name:
+            if len(str(value)) > 5:
+                print(
+                    f"Der Wert {value} für {name} ist wahrscheinlich zu groß und wird ein roll-over erzeugen.",
+                    flush=True,
+                )
+        elif len(str(value)) > 10:
             print(
                 f"Der Wert {value} für {name} ist wahrscheinlich zu groß und wird ein roll-over erzeugen.",
                 flush=True,
             )
         if len(name) > 6:
             print(
-                f"Die Länge des Namens ist aktuell auf drei Chars gestellt. {name} auf {value} zu setzen ist daher wahrscheinlich eine schlechte Idee.",
+                f"Die Länge des Namens ist aktuell auf sechs Chars gestellt. {name} auf {value} zu setzen ist daher wahrscheinlich eine schlechte Idee.",
                 flush=True,
             )
-        # 2 ist der Char-Code für "Variable setzen" (siehe Arduino-Code)
-        self.arduino.write(f"2{name}={value}\n".encode())
-        time.sleep(self.MEASUREMENT_SETTINGS.laser.ARDUINO_DELAY / 1000.0)
+        print(f"sending: 2{name}={value}")
+        # 2 ist der Char-Code für "Variable setzen" (siehe Firmware-Code)
+        self.mcu.write(f"2{name}={value}\n".encode())
+        time.sleep(self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY / 1000.0)
 
-    def send_arduino_signal(self, signal):
-        self.arduino.write(str(signal).encode())
-        time.sleep(self.MEASUREMENT_SETTINGS.laser.ARDUINO_DELAY / 1000.0)
+    def send_firmware_signal(self, signal):
+        self.mcu.write(str(signal).encode())
+        time.sleep(self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY / 1000.0)
 
     def turn_on_laser(self):
-        """Sendet eine Eins als Byte zum Arduino, welche ein Anschalten der Laser signalisiert."""
-        self.arduino.write(b"1")
-        time.sleep(self.MEASUREMENT_SETTINGS.laser.ARDUINO_DELAY / 1000.0)
+        """Sendet eine Eins als Byte zum MCU, welche ein Anschalten der Laser signalisiert."""
+        self.mcu.write(b"1")
+        time.sleep(self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY / 1000.0)
 
     def turn_off_laser(self):
-        """Sendet eine Null als Byte zum Arduino, welche ein Ausschalten der Laser signalisiert."""
-        self.arduino.write(b"0")
-        time.sleep(self.MEASUREMENT_SETTINGS.laser.ARDUINO_DELAY / 1000.0)
+        """Sendet eine Null als Byte zum MCU, welche ein Ausschalten der Laser signalisiert."""
+        self.mcu.write(b"0")
+        time.sleep(self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY / 1000.0)
 
     def spectrometer_setup(self):
         """Verbindet sich mit dem Spektrometer."""
@@ -265,10 +301,10 @@ class Measurement:
         return self.sn.getSpectrum_Y(self.spectrometer)
 
     def led_red(self):
-        self.set_arduino_variable("SetLED", 511)
+        self.set_firmware_variable("SetLED", 511)
 
     def led_green(self):
-        self.set_arduino_variable("SetLED", 151)
+        self.set_firmware_variable("SetLED", 151)
 
     def stop_all_devices(self):
         # emission 0 gibt einen Fehler, wenn external gate weiterhin "LASER AN!!!!" schreit
@@ -302,7 +338,7 @@ class Measurement:
         print(f"measurements took: {total_time_millis} ms")
         delays_time = (
             self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY
-            + 2 * self.MEASUREMENT_SETTINGS.laser.ARDUINO_DELAY
+            + 2 * self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY
             + self.MEASUREMENT_SETTINGS.laser.IRRADITION_TIME
         ) * iters
         print(f"thereof delays: {delays_time} ms")
@@ -339,7 +375,7 @@ class Measurement:
         print(f"measurements took: {total_time_millis} ms")
         delays_time = (
             self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY
-            + 2 * self.MEASUREMENT_SETTINGS.laser.ARDUINO_DELAY
+            + 2 * self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY
             + self.MEASUREMENT_SETTINGS.laser.IRRADITION_TIME
         ) * self.MEASUREMENT_SETTINGS.laser.REPETITIONS
         print(f"thereof delays: {delays_time} ms")
@@ -383,7 +419,7 @@ class Measurement:
 
         def send_and_wait():
             while True:
-                self.send_arduino_signal("3")
+                self.send_firmware_signal("3")
                 time.sleep(
                     self.MEASUREMENT_SETTINGS.specto.INTTIME / 1000
                     + self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000
@@ -398,7 +434,7 @@ class Measurement:
 
     def pulse_measurement(self):
 
-        if self.arduino is None:
+        if self.mcu is None:
             print("Arduino not set up! Can not measure.")
             return
 
@@ -422,12 +458,12 @@ class Measurement:
 
         def send_and_wait():
             while True:
-                self.send_arduino_signal("3")
+                self.send_firmware_signal("3")
                 time.sleep(
                     self.MEASUREMENT_SETTINGS.specto.INTTIME / 1000
                     + self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000
                 )
-                data = self.arduino.read(self.arduino.inWaiting())
+                data = self.mcu.read(self.mcu.inWaiting())
                 if data != b"":
                     print(
                         "in waiting: " + str(data),
