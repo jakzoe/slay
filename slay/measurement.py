@@ -7,6 +7,8 @@ from slay.lasers import LTB
 
 
 from multiprocessing import Process
+import threading
+import concurrent.futures
 import traceback
 import serial
 import sys
@@ -14,7 +16,7 @@ import os
 import time
 import datetime
 import numpy as np
-import threading
+
 
 np.set_printoptions(suppress=True)
 
@@ -86,16 +88,32 @@ class Measurement:
         self.DEBUG = DEBUG
 
         self.MEASUREMENT_SETTINGS = MEASUREMENT_SETTINGS
-        self.spectrometer_setup()
-        self.mcu_setup(serial_path, wait=3)  # 1 ist definitiv zu kurz (getestet)
 
-        self.nkt = NKT(nkt_path)
-        # erst später anschalten
-        self.nkt.set_register("emission", 0)
+        start_time = time.time()
 
-        self.ltb = LTB(port=ltb_path)
-        self.ltb.turn_laser_on()  # auf stand by setzen (dauert 10 Sekunden, da der Laser erst "warm werden" muss)
+        # für das Spektrometer und den LTb muss jeweils ziemlich lange gewartet werden
+        # (bei dem Spektrometer je nach Integrationszeit, da bei der Initialisierung eine erste Messung durchgeführt wird)
+        self.init_tasks = (
+            (self.init_spectrometer, ()),
+            (self.init_mcu, (serial_path, 3)),
+            (self.init_nkt, (nkt_path,)),
+            (self.init_ltb, (ltb_path,)),
+        )
 
+        # ProcessPoolExecutor funktioniert nur, wenn die Funktionen/Argumente gepickelt werden können (außerhalb der Klasse definiert etc.)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = [executor.submit(func, *args) for func, args in self.init_tasks]
+            for future in concurrent.futures.as_completed(futures):
+                result = future.result()
+
+        # self.init_spectrometer()
+        # self.init_mcu(serial_path, wait=3)
+        # self.init_nkt(nkt_path)
+        # self.init_ltb(ltb_path)
+
+        print(
+            f"Finished initializing the measurement in {time.time() - start_time:.2f} seconds."
+        )
         self.messdata = SpectrumData(
             self.MEASUREMENT_SETTINGS.laser.num_gradiants,
             self.MEASUREMENT_SETTINGS.laser.REPETITIONS,
@@ -105,6 +123,7 @@ class Measurement:
         self.set_laser_powers(0)
         # aktuell noch keine Output-Power
         self.led_green()
+        print("Finished initializing the measurement.")
 
     def set_laser_powers(self, index):
 
@@ -144,6 +163,9 @@ class Measurement:
         )
         self.set_firmware_variable(
             "Res445", self.MEASUREMENT_SETTINGS.laser.PWM_RES_BITS_445[index]
+        )
+        self.set_firmware_variable(
+            "FrqLTB", self.MEASUREMENT_SETTINGS.laser.REPETITIONS_LTB[index]
         )
 
         self.set_firmware_variable(
@@ -191,19 +213,26 @@ class Measurement:
         self.nkt.set_register("operating_mode", 4)  # external trigger high signl
 
         self.ltb.set_hv_voltage(self.MEASUREMENT_SETTINGS.laser.INTENSITY_LTB[index])
-        self.ltb.set_repetition_rate(
-            self.MEASUREMENT_SETTINGS.laser.REPETITIONS_LTB[index]
-        )
+        # wird jetzt auch über den mcu getriggert
+        # self.ltb.set_repetition_rate(
+        #     self.MEASUREMENT_SETTINGS.laser.REPETITIONS_LTB[index]
+        # )
 
-    def mcu_setup(self, port, wait):
+    def init_mcu(self, port, wait):
         """Verbindet sich mit dem ArduMMCUCUino."""
         try:
             self.mcu = serial.Serial(port=port, baudrate=115200, timeout=5)
             # auf den MCU warten
+            if wait <= 1:
+                print("mcu: waiting more than 1 second is recommended.")
+                # 1 ist definitiv zu kurz (getestet)
             time.sleep(wait)
             self.mcu.flush()
         except serial.serialutil.SerialException as e:
             print(f"Failed to connect to the MCU: {e}")
+            print(
+                "You may have to unplug and replug the MCU or (on Linux) run:\nsudo modprobe -r ftdi_sio && sudo modprobe ftdi_sio"
+            )
 
             class MCU:
                 def write(self, value):
@@ -248,9 +277,13 @@ class Measurement:
         self.mcu.write(b"0")
         time.sleep(self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY / 1000.0)
 
-    def spectrometer_setup(self):
+    def init_spectrometer(self):
         """Verbindet sich mit dem Spektrometer."""
 
+        print(
+            "Connecting to the spectrometer. Thus getting a first measurement, this might take a while....",
+            flush=True,
+        )
         self.spectrometer = self.sn.array_get_spec_only(0)
 
         # es gibt 2048 Elemente:
@@ -279,6 +312,20 @@ class Measurement:
             self.MEASUREMENT_SETTINGS.specto.XTIMING,
             True,
         )
+
+    def init_nkt(self, nkt_path):
+        self.nkt = NKT(nkt_path)
+        # erst später anschalten
+        self.nkt.set_register("emission", 0)
+
+    def init_ltb(self, ltb_path):
+
+        self.ltb = LTB(port=ltb_path)
+        print("setting LTB to stand by (should take 10 seconds until it warmed up)")
+        self.ltb.turn_laser_off()
+        self.ltb.turn_laser_on()
+        # self.ltb.start_repetition_mode()
+        self.ltb.activate_external_trigger()
 
     def get_wav(self):
         return self.sn.getSpectrum_X(self.spectrometer).reshape(
@@ -309,6 +356,7 @@ class Measurement:
     def stop_all_devices(self):
         # emission 0 gibt einen Fehler, wenn external gate weiterhin "LASER AN!!!!" schreit
         self.turn_off_laser()
+        self.ltb.stop_operation()
         self.nkt.set_register("emission", 0)
         # manuelles triggern erlauben und (vorsichtshalber) die power runterstellen.
         self.nkt.set_register("power", 1)
@@ -353,6 +401,9 @@ class Measurement:
         )
 
     def time_measurement(self, measure):
+
+        # watchdog updaten
+        # self.send_firmware_signal("3")
 
         seconds = time.time()
 
