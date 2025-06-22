@@ -21,9 +21,22 @@ uint8_t pwmResBits445 = 13;
 uint16_t maxDutyVal445 = (uint16_t)(pow(2, pwmResBits445) - 1);
 uint16_t pwmDutyVal445 = 0;
 
+#define PWM_CHANNEL_NITRO 2
+// in us (2-60 sind möglich. Höhere Werte sind einfacher für das PWM)
+// Höhere Werte scheinen dennoch ebenfalls zu funktionieren.
+#define PULSE_WIDTH_NITRO 55
+// Laser kann bis zu 60 Hz. Höher geht dennoch, das wird dann vom Laser selbstständg auf 60 Hz geregelt.
+uint8_t pwmFreqNitro = 10;
+// (konstant, da es keinen Grund gibt, die PWM-Auflösung zu ändern)
+// Für < 14 wird der Ausdruck von getLTButyVal() zu klein.
+#define PWM_RES_BITS_NITRO 14
+uint16_t MAX_DUTY_VAL_NITRO = (uint16_t)(pow(2, PWM_RES_BITS_NITRO) - 1);
+
 // PWM Pin
 #define LASER_PIN_405 8
 #define LASER_PIN_445 2
+#define LASER_PIN_NITROGEN 7
+
 // wenn der 445 nm Laser kein PWM erhält, erreicht er die maximale Leistung.
 #define DISABLE_PWM_445 false
 #define LASER_PIN_SUPERCON 10
@@ -34,9 +47,11 @@ uint16_t pwmDutyVal445 = 0;
 #define USE_RGB_LED false
 #define LED_R_PIN 1
 #define LED_G_PIN 3
-#define LED_B_PIN 1                 // blue disablen (zu wenig Pins)            // ich weiß nicht, wieso. Wahrscheinlich wegen der Register. Aber Pin 11 steuert die Brightness des 445 nm Lasers...
-#define SERIAL_DATA_LENGTH 18       // ein Arduino long hat maximal 10 Ziffern. Plus die 6 für den Namen, ein für das = (6+1 Prefix also) und einen für den Null Characer
-#define SERIAL_DATA_PREFIX_LENGTH 7 // SERIAL_DATA_LENGTH - SERIAL_DATA_PREFIX_LENGTH ist demnach die maximal mögliche Anzahl an Ziffern
+#define LED_B_PIN 1 // blue disablen (zu wenig Pins)
+// ein Arduino long hat maximal 10 Ziffern. Plus die 6 für den Namen, ein für das = (6+1 Prefix also) und einen für den Null Characer
+#define SERIAL_DATA_LENGTH 18
+// SERIAL_DATA_LENGTH - SERIAL_DATA_PREFIX_LENGTH ist demnach die maximal mögliche Anzahl an Ziffern
+#define SERIAL_DATA_PREFIX_LENGTH 7
 #define POT_PIN 0
 #define POTI_SAMPLE_COUNT 51
 int potiReadings[POTI_SAMPLE_COUNT];
@@ -63,7 +78,8 @@ void enableLocks();
 void disableLocks();
 void turnLasersOn();
 void turnLasersOff();
-int readPoti();
+uint16_t readPoti();
+uint16_t getLTBDutyVal();
 
 void setup()
 {
@@ -88,6 +104,7 @@ void setup()
   }
 
   pinMode(LASER_PIN_SUPERCON, OUTPUT);
+  pinMode(LASER_PIN_NITROGEN, OUTPUT);
   pinMode(LASER_PIN_445_KILL_SWITCH, OUTPUT);
   pinMode(LASER_PIN_405, OUTPUT);
   pinMode(LASER_PIN_445, OUTPUT);
@@ -98,6 +115,9 @@ void setup()
   }
 
   ledcAttachChannel(LASER_PIN_405, pwmFreq405, pwmResBits405, PWM_CHANNEL_405);
+  // pull up
+  // ledcOutputInvert(LASER_PIN_NITROGEN, true);
+  ledcAttachChannel(LASER_PIN_NITROGEN, pwmFreqNitro, PWM_RES_BITS_NITRO, PWM_CHANNEL_NITRO);
 
   // ledcAttachChannel attached die Pins auch, daher direkt ausschalten
   enableLocks();
@@ -113,28 +133,18 @@ void setup()
   LaserSerial.begin(115200, SERIAL_8N1, 20, 21);
   LaserSerial.flush();
 
-  // // TEST
+  // TEST
   // turnLasersOn();
+  // turnLasersOff();
 }
 
 void loop()
 {
-  // int potiValue = readPoti();
-  // int mapping = map(readPoti(), 0, 4095, 0, maxDutyVal405);
-  // ledcWrite(LASER_PIN_445, mapping);
-  // // ledcWrite(LASER_PIN_405, maxDutyVal405);
-  // LaserSerial.println("Poti Value:");
-  // LaserSerial.println(potiValue);
-  // delay(10);
-  // LaserSerial.println(mapping);
-  // delay(10);
-  // LaserSerial.println(maxDutyVal405);
-  // delay(20);
-  // return;
 
   // disableLocks();
   readSerial();
 
+  // return;
   // watchdog
   if (lasersAreOn && millis() - lastUpdateTime >= expectedDelay)
   {
@@ -293,6 +303,13 @@ void readSerial()
       // LaserSerial.println("Setting pwmResBits445");
       // LaserSerial.println(pwmResBits445, DEC);
     }
+    else if (strcmp(varNameData, "FrqLTB") == 0)
+    {
+      pwmFreqNitro = atoi(varValueData);
+      ledcChangeFrequency(LASER_PIN_NITROGEN, pwmFreqNitro, PWM_RES_BITS_NITRO);
+      // LaserSerial.println("Setting pwmFreqNitro");
+      // LaserSerial.println(pwmFreqNitro, DEC);
+    }
     else if (strcmp(varNameData, "SetLED") == 0)
     {
       String data = (String)atoi(varValueData); // z. B. 0000000222 zu 222
@@ -341,14 +358,21 @@ void enableLocks()
 {
 
   digitalWrite(LASER_PIN_445_KILL_SWITCH, LOW);
+  pinMode(LASER_PIN_445_KILL_SWITCH, OUTPUT);
   digitalWrite(LASER_PIN_SUPERCON, HIGH);
 
   // nur den duty cycle auf 0 setzen würde vermutlich dazu führen, dass es beim Resetten des PWM-Timers einen voltage-spike von einem Clock-Cycle gibt.
   ledcDetach(LASER_PIN_405);
-  digitalWrite(LASER_PIN_405, 0);
+  pinMode(LASER_PIN_405, OUTPUT);
+  digitalWrite(LASER_PIN_405, LOW);
 
   ledcDetach(LASER_PIN_445);
-  digitalWrite(LASER_PIN_445, 0);
+  pinMode(LASER_PIN_445, OUTPUT);
+  digitalWrite(LASER_PIN_445, LOW);
+
+  ledcDetach(LASER_PIN_NITROGEN);
+  pinMode(LASER_PIN_NITROGEN, OUTPUT);
+  digitalWrite(LASER_PIN_NITROGEN, LOW);
 }
 
 void disableLocks()
@@ -364,9 +388,11 @@ void turnLasersOn()
 
   ledcAttachChannel(LASER_PIN_405, pwmFreq405, pwmResBits405, PWM_CHANNEL_405);
   ledcAttachChannel(LASER_PIN_445, pwmFreq445, pwmResBits445, PWM_CHANNEL_445);
+  ledcAttachChannel(LASER_PIN_NITROGEN, pwmFreqNitro, PWM_RES_BITS_NITRO, PWM_CHANNEL_NITRO);
 
   ledcWrite(LASER_PIN_405, pwmDutyVal405);
-  // pull down resistor, thus inverted logic
+  ledcWrite(LASER_PIN_NITROGEN, getLTBDutyVal());
+  // pull-up resistor, thus inverted logic
   digitalWrite(LASER_PIN_SUPERCON, LOW);
 
   if (pwmDutyVal445 == 1234 || DISABLE_PWM_445)
@@ -387,8 +413,13 @@ void turnLasersOff()
   lasersAreOn = false;
 }
 
+uint16_t getLTBDutyVal()
+{
+  return (PULSE_WIDTH_NITRO * MAX_DUTY_VAL_NITRO) / (1000000 / pwmFreqNitro);
+}
+
 // median filter
-int readPoti()
+uint16_t readPoti()
 {
   for (int i = 0; i < POTI_SAMPLE_COUNT; i++)
   {
