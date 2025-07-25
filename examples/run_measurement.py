@@ -27,6 +27,13 @@ except IndexError:
     LTB_PATH = ""
     print("Could not find the LTB LASER.")
 
+try:
+    CAM_PATH = sys.argv[4]
+    if "none" == CAM_PATH:
+        raise IndexError()
+except IndexError:
+    CAM_PATH = ""
+    print("Could not find the camera.")
 
 if __name__ == "__main__":
 
@@ -39,14 +46,14 @@ if __name__ == "__main__":
         FILLING_QUANTITY=3,  # in ml
         OXYGEN_SPEED=50,  # cm^3 / min
         specto=MeasurementSettings.SpectoSettings(
-            INTTIME=1000,  # 10000 # int(1000 * 60 * 0.5),
+            INTTIME=2_000,  # 10000 # int(1000 * 60 * 0.5),
             SCAN_AVG=1,
             SMOOTH=0,
             XTIMING=3,
             AMPLIFICATION=False,
         ),
         laser=MeasurementSettings.LaserSettings(
-            REPETITIONS=10,
+            REPETITIONS=5,
             MEASUREMENT_DELAY=3,
             IRRADITION_TIME=3,
             SERIAL_DELAY=3,
@@ -62,8 +69,8 @@ if __name__ == "__main__":
             PWM_RES_BITS_445="13",
             PWM_DUTY_PERC_445="np.linspace(0, 1, 10)",
             #
-            REPETITIONS_LTB="0",
-            INTENSITY_LTB="0",
+            REPETITIONS_LTB="range(5,55,5)",
+            INTENSITY_LTB="8",
             ND_NKT=0,
             ND_405=0,
             ND_445=0,
@@ -73,15 +80,20 @@ if __name__ == "__main__":
     )
     # TODO: alle paar Sekunden Messergebnisse zwischenspeichern (Daten von einem separaten Process kopieren und speichern)
 
-    measurement_settings.print_status()
+    # measurement_settings.print_status()
     # exit()
-    measurement = Measurement(SERIAL_PATH, NKT_PATH, LTB_PATH, measurement_settings)
+    dir_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "messungen/"
+    )
+    measurement = Measurement(
+        SERIAL_PATH, NKT_PATH, LTB_PATH, CAM_PATH, measurement_settings, dir_path
+    )
 
     # measurement.infinite_measuring()
     # exit()
 
-    measurement.measure()
-    DIR_PATH = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "messungen/"
-    )
-    measurement.save(DIR_PATH)
+    try:
+        measurement.measure()
+        measurement.save()
+    except KeyboardInterrupt as e:
+        print(e)

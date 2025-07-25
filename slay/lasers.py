@@ -175,7 +175,7 @@ class LTB:
                         time.sleep(2)
                     ts = time.strftime("%Y-%m-%d %H:%M:%S")
                     print(
-                        f"{ts} - WARNING - Retrying command {req_data_unit}... Attempt {attempt + 1}"
+                        f"{ts} - WARNING - Retrying command {req_data_unit}... Attempt {attempt + 1}/{retries}"
                     )
                     continue
                 raise

@@ -4,10 +4,12 @@ from slay.settings import MeasurementSettings
 
 from slay.lasers import NKT
 from slay.lasers import LTB
+from slay.lasers import LaserProtocolError
+from slay.camera import USBCamera
+from slay.live_plotter import LivePlotter
 
 
 from multiprocessing import Process
-import threading
 import concurrent.futures
 import traceback
 import serial
@@ -16,7 +18,6 @@ import os
 import time
 import datetime
 import numpy as np
-
 
 np.set_printoptions(suppress=True)
 
@@ -61,7 +62,9 @@ class Measurement:
         serial_path: str,
         nkt_path: str,
         ltb_path: str,
+        cam_path: str,
         MEASUREMENT_SETTINGS: MeasurementSettings,
+        dir_path: str,
     ):
 
         try:
@@ -93,7 +96,7 @@ class Measurement:
 
         # für das Spektrometer und den LTb muss jeweils ziemlich lange gewartet werden
         # (bei dem Spektrometer je nach Integrationszeit, da bei der Initialisierung eine erste Messung durchgeführt wird)
-        self.init_tasks = (
+        init_tasks = (
             (self.init_spectrometer, ()),
             (self.init_mcu, (serial_path, 3)),
             (self.init_nkt, (nkt_path,)),
@@ -102,7 +105,7 @@ class Measurement:
 
         # ProcessPoolExecutor funktioniert nur, wenn die Funktionen/Argumente gepickelt werden können (außerhalb der Klasse definiert etc.)
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            futures = [executor.submit(func, *args) for func, args in self.init_tasks]
+            futures = [executor.submit(func, *args) for func, args in init_tasks]
             for future in concurrent.futures.as_completed(futures):
                 result = future.result()
 
@@ -124,6 +127,23 @@ class Measurement:
         # aktuell noch keine Output-Power
         self.led_green()
         print("Finished initializing the measurement.")
+
+        # Speicherort definieren
+        name = "DEBUG" if self.DEBUG else self.MEASUREMENT_SETTINGS.TYPE
+        name += (
+            "/Kontinuierlich" if self.MEASUREMENT_SETTINGS.laser.CONTINOUS else "/Puls"
+        )
+
+        self.type_dir = dir_path + name + "/"
+        os.makedirs(self.type_dir, 0o777, exist_ok=True)
+
+        self.code_name = "overwrite-messung"
+        if self.MEASUREMENT_SETTINGS.UNIQUE:
+            # manche Dateisysteme unterstützen keinen Doppelpunkt im Dateinamen
+            self.code_name = str(datetime.datetime.now()).replace(":", "_")
+
+        self.file_name = self.type_dir + self.code_name
+        self.cam = USBCamera(cam_path, self.file_name)
 
     def set_laser_powers(self, index):
 
@@ -212,6 +232,12 @@ class Measurement:
         print(f"NKT: Frequenz auf {freq} gesetzt.")
         self.nkt.set_register("operating_mode", 4)  # external trigger high signl
 
+        # # falls er davor ausging, da [index-1] 0 war.
+        # try:
+        #     self.ltb.turn_laser_on()
+        #     self.ltb.activate_external_trigger()
+        # except LaserProtocolError as e:
+        #     print(f"Could not run activate_external_trigger() again: {e} ", flush=True)
         self.ltb.set_hv_voltage(self.MEASUREMENT_SETTINGS.laser.INTENSITY_LTB[index])
         # wird jetzt auch über den mcu getriggert
         # self.ltb.set_repetition_rate(
@@ -221,7 +247,17 @@ class Measurement:
     def init_mcu(self, port, wait):
         """Verbindet sich mit dem ArduMMCUCUino."""
         try:
-            self.mcu = serial.Serial(port=port, baudrate=115200, timeout=5)
+            # self.mcu = serial.Serial(port=port, baudrate=115200, timeout=5)
+            self.mcu = serial.Serial()
+            self.mcu.port = port
+            self.mcu.baudrate = 115200
+            self.mcu.timeout = 5
+            # das Device nicht resetten, wenn es geöffnet wrid.
+            self.mcu.dtr = False
+            self.mcu.rts = False
+            self.mcu.open()
+            self.mcu.set_low_latency_mode(True)
+
             # auf den MCU warten
             if wait <= 1:
                 print("mcu: waiting more than 1 second is recommended.")
@@ -230,9 +266,8 @@ class Measurement:
             self.mcu.flush()
         except serial.serialutil.SerialException as e:
             print(f"Failed to connect to the MCU: {e}")
-            print(
-                "You may have to unplug and replug the MCU or (on Linux) run:\nsudo modprobe -r ftdi_sio && sudo modprobe ftdi_sio"
-            )
+            print("You may have to unplug and replug the MCU.")
+            raise e
 
             class MCU:
                 def write(self, value):
@@ -322,10 +357,13 @@ class Measurement:
 
         self.ltb = LTB(port=ltb_path)
         print("setting LTB to stand by (should take 10 seconds until it warmed up)")
-        self.ltb.turn_laser_off()
+        # self.ltb.turn_laser_off()
         self.ltb.turn_laser_on()
         # self.ltb.start_repetition_mode()
-        self.ltb.activate_external_trigger()
+        try:
+            self.ltb.activate_external_trigger()
+        except LaserProtocolError as e:
+            print(e)
 
     def get_wav(self):
         return self.sn.getSpectrum_X(self.spectrometer).reshape(
@@ -438,19 +476,22 @@ class Measurement:
             f"a measurement took: {(total_time_millis - delays_time) / 1.0 / self.MEASUREMENT_SETTINGS.laser.REPETITIONS} ms"
         )
 
-    def watchdog_wrap(self, watchdog_target, func, timeout_sec=3):
-        p = Process(
-            target=watchdog_target,
-            daemon=True,
-        )
-        p.start()
+    def mcu_watchdog(self):
+        while True:
+            self.send_firmware_signal("3")
+            time.sleep(
+                self.MEASUREMENT_SETTINGS.specto.INTTIME / 1000
+                + self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000
+            )
 
-        func()
-
-        p.terminate()
-        p.join(timeout=timeout_sec)
-        if p.is_alive():
-            p.kill()
+    def ltb_watchdog(self):
+        """Docs: If there is no communication between the laser and the computer for more than 30 seconds, the laser will be switched into the standby mode."""
+        while True:
+            status = self.ltb.get_version_info()
+            print(f"LTB status: {status}", flush=True)
+            # if "WARNING" in status:
+            #     print(status, flush=True)
+            time.sleep(2)
 
     def continuous_measurement(self):
 
@@ -468,20 +509,13 @@ class Measurement:
         # (Emission muss jedoch erst an sein, bevor der LASER extern getriggert werden kann)
         self.nkt.set_register("emission", 1)
 
-        def send_and_wait():
-            while True:
-                self.send_firmware_signal("3")
-                time.sleep(
-                    self.MEASUREMENT_SETTINGS.specto.INTTIME / 1000
-                    + self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000
-                )
-
         def measure_func():
             self.turn_on_laser()
             print("turned on lasers", flush=True)
             self.time_measurement(measure)
 
-        self.watchdog_wrap(send_and_wait, measure_func)
+        measure_func()
+        # self.watchdog_wrap(self.mcu_watchdog, measure_func)
 
     def pulse_measurement(self):
 
@@ -507,19 +541,19 @@ class Measurement:
             self.nkt.set_register("operating_mode", 0)  # internal trigger
             self.nkt.set_register("emission", 1)
 
-        def send_and_wait():
-            while True:
-                self.send_firmware_signal("3")
-                time.sleep(
-                    self.MEASUREMENT_SETTINGS.specto.INTTIME / 1000
-                    + self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000
-                )
-                data = self.mcu.read(self.mcu.inWaiting())
-                if data != b"":
-                    print(
-                        "in waiting: " + str(data),
-                        flush=True,
-                    )  # flushInput()
+        # def send_and_wait():
+        #     while True:
+        #         self.send_firmware_signal("3")
+        #         time.sleep(
+        #             self.MEASUREMENT_SETTINGS.specto.INTTIME / 1000
+        #             + self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000
+        #         )
+        #         data = self.mcu.read(self.mcu.inWaiting())
+        #         if data != b"":
+        #             print(
+        #                 "in waiting: " + str(data),
+        #                 flush=True,
+        #             )  # flushInput()
 
         def infinite_measure():
             self.turn_on_laser()
@@ -539,66 +573,101 @@ class Measurement:
                     )
                     self.messdata.curr_measurement_index = next_measurement_index
             except KeyboardInterrupt:
-                self.disable_gui()
+                self.plot.stop_gui()
+                del self.plot
                 self.sn.reset(self.spectrometer)
                 self.stop_all_devices()
 
-        self.watchdog_wrap(send_and_wait, infinite_measure)
+        def watchdog_wrap(watchdog_target, func, timeout_sec=3):
+            p = Process(
+                target=watchdog_target,
+                daemon=True,
+            )
+            p.start()
 
-    def measure(self, gui=True, thread=True):
+            func()
 
-        if gui:
-            self.enable_gui()
+            p.terminate()
+            p.join(timeout=timeout_sec)
+            if p.is_alive():
+                p.kill()
 
+        watchdog_wrap(self.mcu_watchdog, infinite_measure)
+
+    def _measure_task(self):
         for self.messdata.curr_gradiant in range(
             self.MEASUREMENT_SETTINGS.laser.num_gradiants
         ):
 
             self.set_laser_powers(self.messdata.curr_gradiant)
 
-            def run():
-                if self.MEASUREMENT_SETTINGS.laser.CONTINOUS:
-                    self.continuous_measurement()
-                else:
-                    self.pulse_measurement()
-
-            if thread:
-                t = threading.Thread(
-                    target=run,
-                    daemon=True,  # Main-Thread soll nicht auf den Thread warten
-                )
-                t.start()
-                t.join()
+            if self.MEASUREMENT_SETTINGS.laser.CONTINOUS:
+                self.continuous_measurement()
             else:
-                run()
+                self.pulse_measurement()
+
+    def measure(self, gui=True):
+
+        ltb_p = Process(
+            target=self.ltb_watchdog,
+            daemon=True,
+        )
+        mcu_p = Process(
+            target=self.mcu_watchdog,
+            daemon=True,
+        )
+
+        from threading import Thread
+
+        measure_p = Thread(
+            target=self._measure_task,
+            daemon=True,
+        )
+
+        try:
+            ltb_p.start()
+            self.cam.start()
+            if self.MEASUREMENT_SETTINGS.laser.CONTINOUS:
+                mcu_p.start()
+            measure_p.start()
+
+            if gui:
+                # self.plot = SpectrumPlot()
+                live_plotter = LivePlotter()
+                live_plotter.start(
+                    self.MEASUREMENT_SETTINGS.laser.REPETITIONS, self.messdata
+                )
+
+            print("sleeping", flush=True)
+            time.sleep(1000)
+        except KeyboardInterrupt:
+            print("Interrupted! Shutting down.")
+            # müsste den gleichen Effekt wie .terminate haben, da keine anderen Signalhandler konfiguriert sind
+            ltb_p.kill()
+            mcu_p.kill()
+            measure_p.kill()
+            self.cam.process.kill()
+
+        if self.cam.process.is_alive():
+            self.cam.stop()
+
+        ltb_p.terminate()
+        mcu_p.terminate()
+        measure_p.terminate()
 
         self.stop_all_devices()
 
         if gui:
-            self.disable_gui()
+            self.plot.stop_gui()
+            del self.plot
 
-    def save(self, DIR_PATH, plt_only=False, measurements_only=False):
+    def save(self, plt_only=False, measurements_only=False):
         """Schreibt die Messdaten in einen spezifizierten Ordner."""
         # gemeinsame Typen werden in einem gemeinsamen Ordner gespeichert
 
-        name = "DEBUG" if self.DEBUG else self.MEASUREMENT_SETTINGS.TYPE
-        name += (
-            "/Kontinuierlich" if self.MEASUREMENT_SETTINGS.laser.CONTINOUS else "/Puls"
-        )
-
-        type_dir = DIR_PATH + name + "/"
-        os.makedirs(type_dir, 0o777, exist_ok=True)
-
-        code_name = "overwrite-messung"
-        if self.MEASUREMENT_SETTINGS.UNIQUE:
-            # manche Dateisysteme unterstützen keinen Doppelpunkt im Dateinamen
-            code_name = str(datetime.datetime.now()).replace(":", "_")
-
-        file_name = type_dir + code_name
-
         if not plt_only:
             with open(
-                file_name + ".json",
+                self.file_name + ".json",
                 "w",
                 encoding="utf-8",
             ) as json_file:
@@ -616,19 +685,19 @@ class Measurement:
             # metadata[8] = int(self.MEASUREMENT_SETTINGS["laser"]["CONTINOUS"])
 
             np.savez_compressed(
-                file_name,
+                self.file_name,
                 np.array(self.messdata.measurements),
                 np.array(self.messdata.wav),
                 np.array(self.messdata.timestamps),
             )
-            os.chmod(file_name + ".npz", 0o777)
+            os.chmod(self.file_name + ".npz", 0o777)
 
         if not measurements_only:
             if not hasattr(self, "plot"):
                 self.plot = SpectrumPlot()
 
             self.plot.plot_results(
-                [PlotSettings(type_dir, code_name, True)],
+                [PlotSettings(self.type_dir, self.code_name, True)],
                 self.MEASUREMENT_SETTINGS,
             )
 
@@ -641,14 +710,6 @@ class Measurement:
             settings,
             self.MEASUREMENT_SETTINGS if mSettings == None else mSettings,
         )
-
-    def enable_gui(self):
-        self.plot = SpectrumPlot()
-        self.plot.start_gui(self.MEASUREMENT_SETTINGS.laser.REPETITIONS, self.messdata)
-
-    def disable_gui(self):
-        self.plot.stop_gui()
-        del self.plot
 
     # def plot(self, settings, measurement_data, wav):
     #     self.plot.plot_results(

@@ -24,7 +24,6 @@ plt.style.use(["science"])
 # da eine bestimmte figsize gespeichert wrid (zuvor definiert, hier von scienceplots. Defaul ist 6.4, 4.8)
 # wird es dennoch zumindest zu einem overlapping label kommen. Dieses wird im Fall der Fälle auomatisch unter den Plot "verschoben" (siehe legend_collides)
 plt.rcParams["figure.constrained_layout.use"] = True
-USE_GRID = False
 
 import os
 import subprocess
@@ -63,26 +62,7 @@ class SpectrumPlot:
         num_others: int = (
             0  # wie viele andere Graphen ebenfalls noch in den Plot kommen
         )
-
-    def __init__(self):
-
-        self.live_fig, self.live_ax = plt.subplots()
-        self.live_ax.set_xlabel("Wellenlänge (nm)")
-        self.live_ax.set_ylabel("Intensität (Counts)")
-        # self.live_ax.grid(True)
-        if USE_GRID:
-            self.live_ax.grid(visible=True, which="both", linestyle="--", linewidth=0.5)
-        # weniger Weiß an den Rändern
-
-        self.scatter = self.live_ax.scatter(
-            [], [], label="Mittelwert von 0 Messungen", s=5
-        )
-
-        self.past_measurement_index = -1
-
-        plt.ion()
-        plt.show()
-        self.stop_event = threading.Event()
+        use_grid = False
 
     @staticmethod
     def wavelength_to_rgb(wavelength, gamma=0.8):
@@ -386,7 +366,7 @@ class SpectrumPlot:
             "frameon": True,
             "fancybox": True,
             "shadow": True,
-            "markerscale": 4 if USE_GRID else 2,
+            "markerscale": 4 if settings.use_grid else 2,
             # framealpha=0.3,
         }
 
@@ -451,6 +431,7 @@ class SpectrumPlot:
         measurement_settings: MeasurementSettings,
         colors=None,
         show_plots=True,
+        use_grid=False,
         # messdata: Messdata,
         # verbose=True,
     ):
@@ -484,7 +465,7 @@ class SpectrumPlot:
         collide_graph = False
 
         # plt.grid(True)
-        if USE_GRID:
+        if use_grid:
             plt.grid(visible=True, which="both", linestyle="--", linewidth=0.5)
 
         if colors is None:
@@ -786,6 +767,7 @@ class SpectrumPlot:
                     time_plot=time_plot,
                     interpolate=setting.interpolate,
                     num_others=len(plotting_settings) - 1,
+                    use_grid=use_grid,
                 )
                 collide_graph = SpectrumPlot.data_to_plot(graphSettings, collide_graph)
 
@@ -963,7 +945,7 @@ class SpectrumPlot:
         # plt.clf()
         plt.close(self.live_fig)
 
-    def start_gui(self, frames, messdata):
+    def gui_loop(self, frames, messdata):
 
         self.live_animation = animation.FuncAnimation(
             fig=self.live_fig,
