@@ -1,15 +1,15 @@
-# docker build -t laserdocker .
-# docker build -t laserdocker --target debug .
+# docker build -t laserdocker:release . && docker build -t laserdocker:debug --target debug .
 # docker system prune # -a for EVERYTHING
 
 FROM debian:latest AS base
 
 RUN apt -y update && apt -y upgrade
-RUN apt -y install libssl-dev openssl wget build-essential zlib1g-dev libffi-dev libcairo2-dev libgirepository1.0-dev libusb-1.0-0-dev usbutils udev
+RUN apt -y install libssl-dev openssl wget build-essential zlib1g-dev libffi-dev libcairo2-dev libgirepository1.0-dev libopencv-dev libusb-1.0-0-dev usbutils udev
 RUN apt -y install mesa-utils libgtk-3-dev
 # needed for building for ipython
 RUN apt-get -y install libsqlite3-dev
 
+# This is needed for the stellarnet driverLibs. Using conda would work too of course. 
 WORKDIR /usr/src
 RUN wget https://www.python.org/ftp/python/3.10.9/Python-3.10.9.tgz
 RUN tar zxvf Python-3.10.9.tgz
@@ -33,7 +33,7 @@ RUN mkdir -p ${INSTALL_PATH}
 # RUN apt -y install libgirepository-2.0-dev
 
 # PyGObject as an alternative to the larger matplotlib backend tkinter:
-RUN /usr/local/bin/pip3 install pyusb pyserial numpy matplotlib PyGObject==3.50.0 SciencePlots pylablib
+RUN /usr/local/bin/pip3 install pyusb pyserial numpy matplotlib PyGObject==3.50.0 SciencePlots pylablib opencv-python
 # SciencePlots is able to use LaTeX (can be disabled using 'no-latex')
 RUN apt-get -y install dvipng texlive-latex-extra texlive-fonts-recommended cm-super
 
