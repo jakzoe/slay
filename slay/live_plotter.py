@@ -32,17 +32,10 @@ class LivePlotter:
         # self.stop_event = threading.Event()
 
     def update_plot(self, frame, messdata):
-        """Updates the plot every interval."""
+        """Plottet die aktuell gemessene Messung."""
         if self.stop_event.is_set():
             plt.close(self.live_fig)
             return
-
-        # self.live_ax.clear()
-        # self.live_ax.plot(self.data[-20:])
-
-        # """Plottet die aktuell gemessene Messung."""
-
-        # print(threading.current_thread() == threading.main_thread())
 
         wav = messdata.wav
         measurements = messdata.measurements
@@ -86,19 +79,19 @@ class LivePlotter:
         # self.live_ax.scatter([], [], label="Mittelwert von 0 Messungen", s=5)
 
     def start(self, frames, messdata_ref):
-        """Starts background data thread and plot animation."""
-        # Start animation
-        self.ani = FuncAnimation(
+        """Starts live plotting."""
+        self.live_ani = FuncAnimation(
             fig=self.live_fig,
             func=self.update_plot,
             interval=25,
             # frames=frames,
             fargs=(messdata_ref,),
+            # blit=True,
         )
-        plt.show()  # Blocking call; keep in main thread
+        plt.show()
 
     def stop(self):
-        """Stop the animation and data collection."""
+        """Stop the live plotting."""
         self.stop_event.set()
-        if hasattr(self, "ani"):
-            self.ani.event_source.stop()
+        if hasattr(self, "live_ani"):
+            self.live_ani.event_source.stop()

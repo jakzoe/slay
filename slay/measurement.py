@@ -573,8 +573,7 @@ class Measurement:
                     )
                     self.messdata.curr_measurement_index = next_measurement_index
             except KeyboardInterrupt:
-                self.plot.stop_gui()
-                del self.plot
+                self.live_plotter.stop()
                 self.sn.reset(self.spectrometer)
                 self.stop_all_devices()
 
@@ -632,7 +631,6 @@ class Measurement:
             measure_p.start()
 
             if gui:
-                # self.plot = SpectrumPlot()
                 live_plotter = LivePlotter()
                 live_plotter.start(
                     self.MEASUREMENT_SETTINGS.laser.REPETITIONS, self.messdata
@@ -658,8 +656,7 @@ class Measurement:
         self.stop_all_devices()
 
         if gui:
-            self.plot.stop_gui()
-            del self.plot
+            live_plotter.stop()
 
     def save(self, plt_only=False, measurements_only=False):
         """Schreibt die Messdaten in einen spezifizierten Ordner."""
@@ -693,25 +690,13 @@ class Measurement:
             os.chmod(self.file_name + ".npz", 0o777)
 
         if not measurements_only:
-            if not hasattr(self, "plot"):
-                self.plot = SpectrumPlot()
-
-            self.plot.plot_results(
+            SpectrumPlot.plot_results(
                 [PlotSettings(self.type_dir, self.code_name, True)],
                 self.MEASUREMENT_SETTINGS,
             )
 
-    def plot_path(self, settings, mSettings=None):
-
-        if not hasattr(self, "plot"):
-            self.plot = SpectrumPlot()
-
-        self.plot.plot_results(
+    def plot_path(self, settings, m_settings=None):
+        SpectrumPlot.plot_results(
             settings,
-            self.MEASUREMENT_SETTINGS if mSettings == None else mSettings,
+            self.MEASUREMENT_SETTINGS if m_settings is None else m_settings,
         )
-
-    # def plot(self, settings, measurement_data, wav):
-    #     self.plot.plot_results(
-    #         [PlottingSettings(DIR_PATH)], settings, measurement_data, wav
-    #     )

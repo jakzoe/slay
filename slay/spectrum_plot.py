@@ -26,15 +26,8 @@ plt.style.use(["science"])
 plt.rcParams["figure.constrained_layout.use"] = True
 
 import os
-import subprocess
-from multiprocessing import Process
-import warnings
-
-import matplotlib.animation as animation
 import sys
-import time
 import scipy
-import threading
 import copy
 from math import ceil, floor
 
@@ -59,10 +52,9 @@ class SpectrumPlot:
         marker_size: int = 4
         time_plot: bool = False
         interpolate: bool = False
-        num_others: int = (
-            0  # wie viele andere Graphen ebenfalls noch in den Plot kommen
-        )
-        use_grid = False
+        # wie viele andere Graphen ebenfalls noch in den Plot kommen
+        num_others: int = 0
+        use_grid: bool = False
 
     @staticmethod
     def wavelength_to_rgb(wavelength, gamma=0.8):
@@ -881,115 +873,3 @@ class SpectrumPlot:
                 print(e.strerror)
 
             os.chdir(cwd)
-
-    def update_live_plot(self, i, messdata):
-        """Plottet die aktuell gemessene Messung."""
-
-        # print(threading.current_thread() == threading.main_thread())
-
-        wav = messdata.wav
-        measurements = messdata.measurements
-
-        # trying to calculate a signal to noise ratio...
-        # mean_measurement = np.mean(measurements, axis=0)
-        # std_measurement = np.std(measurements, axis=0)
-        # with np.errstate(divide="ignore", invalid="ignore"):
-        #     snr = np.true_divide(std_measurement, mean_measurement)
-        #     snr[~np.isfinite(snr)] = 0  # set inf and NaN to 0
-        # print(snr)
-
-        curr_measurement_index = messdata.curr_measurement_index
-        curr_gradiant = messdata.curr_gradiant
-
-        if (
-            len(measurements) == 0
-            or curr_measurement_index < 0
-            or self.past_measurement_index == curr_measurement_index
-        ):
-            return
-
-        measurement = measurements[curr_gradiant][curr_measurement_index]
-
-        label = f"Spektrum von Messung {curr_measurement_index + 1}"
-        self.live_ax.clear()
-
-        settings = self.GraphSettings(
-            self.live_fig, self.live_ax, wav, measurement, label, True, "black", "-"
-        )
-        self.data_to_plot(settings)
-
-        self.past_measurement_index = curr_measurement_index
-        return (self.scatter,)
-
-    def suppressed_pause(self):
-        # if self.stop_event.is_set():
-        #     print(self.stop_event.is_set())
-        #     return
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning)
-            # UserWarning: Starting a Matplotlib GUI outside of the main thread will likely fail.
-            plt.pause(0.1)
-
-    def live_thread_job(self):
-
-        pause_thread = threading.Thread(
-            target=lambda: self.suppressed_pause(),  # ohne lambda wird es direkt ausgeführt
-            daemon=True,
-        )
-        pause_thread.start()  # aus einem Grund, den ich nicht kenne, exited plt.pause nie. plt.draw() und dann plt.show(block=False) hat auch nicht funktioniert.
-        while not self.stop_event.is_set():
-            time.sleep(1)
-            # pause_thread.join(timeout=1)
-
-        # plt.cla()
-        # plt.clf()
-        plt.close(self.live_fig)
-
-    def gui_loop(self, frames, messdata):
-
-        self.live_animation = animation.FuncAnimation(
-            fig=self.live_fig,
-            func=self.update_live_plot,
-            interval=25,
-            frames=frames,
-            fargs=(messdata,),
-            # blit=True,
-        )
-
-        # funktioniert nicht, da kein shared mem
-        # self.live_thread = Process(
-        #     target=lambda: [self.suppressed_pause() for _ in iter(int, 1)], daemon=True
-        # )
-
-        self.live_thread = threading.Thread(
-            # target=lambda: [
-            #     self.suppressed_pause() for _ in iter(int, 1)
-            # ],  #
-            target=self.live_thread_job,
-            daemon=True,  # Main-Thread soll nicht auf den Thread warten
-        )
-        self.live_thread.start()
-
-        # threading.Thread(
-        #     target=plt.show(),  # instead of plt.show()
-        #     daemon=True,  # Main-Thread soll nicht auf den Thread warten
-        # ).start()
-
-        # plt.show()
-
-        # threading.Thread(target=send_plot, daemon=True).start()
-        # plt.ioff()
-
-        # warten, bis der Thread gestartet ist
-        time.sleep(0.5)
-
-    def stop_gui(self):
-        if hasattr(self, "stop_event") and hasattr(self, "live_thread"):
-            self.stop_event.set()
-            self.live_thread.join(timeout=5)
-            # self.live_animation.event_source.stop()
-
-        # self.live_thread.terminate()
-        # self.live_thread.join(timeout=3)
-        # if self.live_thread.is_alive():
-        #     self.live_thread.kill()
