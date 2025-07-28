@@ -10,6 +10,7 @@ from slay.live_plotter import LivePlotter
 
 
 from multiprocessing import Process
+from threading import Thread, Event
 import concurrent.futures
 import traceback
 import serial
@@ -39,6 +40,7 @@ class SpectrumData:
         self.wav = wav
         self.curr_gradiant = -1
         self.curr_measurement_index = -1
+        self.stop_event = Event()
 
     def get_data(self):
         return self.measurements, self.wav, self.curr_measurement_index
@@ -488,7 +490,7 @@ class Measurement:
         """Docs: If there is no communication between the laser and the computer for more than 30 seconds, the laser will be switched into the standby mode."""
         while True:
             status = self.ltb.get_version_info()
-            print(f"LTB status: {status}", flush=True)
+            # print(f"LTB status: {status}", flush=True)
             # if "WARNING" in status:
             #     print(status, flush=True)
             time.sleep(2)
@@ -605,6 +607,8 @@ class Measurement:
             else:
                 self.pulse_measurement()
 
+        self.messdata.stop_event.set()
+
     def measure(self, gui=True):
 
         ltb_p = Process(
@@ -615,8 +619,6 @@ class Measurement:
             target=self.mcu_watchdog,
             daemon=True,
         )
-
-        from threading import Thread
 
         measure_p = Thread(
             target=self._measure_task,
@@ -633,30 +635,29 @@ class Measurement:
             if gui:
                 live_plotter = LivePlotter()
                 live_plotter.start(
-                    self.MEASUREMENT_SETTINGS.laser.REPETITIONS, self.messdata
+                    self.messdata.measurements.shape[0]
+                    * self.messdata.measurements.shape[1],
+                    max(self.MEASUREMENT_SETTINGS.specto.INTTIME, 300),
+                    self.messdata,
                 )
 
-            print("sleeping", flush=True)
-            time.sleep(1000)
+            # print("sleeping", flush=True)
+            # time.sleep(1000)
         except KeyboardInterrupt:
             print("Interrupted! Shutting down.")
             # müsste den gleichen Effekt wie .terminate haben, da keine anderen Signalhandler konfiguriert sind
             ltb_p.kill()
             mcu_p.kill()
-            measure_p.kill()
-            self.cam.process.kill()
+            # measure_p.kill()
 
         if self.cam.process.is_alive():
             self.cam.stop()
 
         ltb_p.terminate()
         mcu_p.terminate()
-        measure_p.terminate()
+        # measure_p.terminate()
 
         self.stop_all_devices()
-
-        if gui:
-            live_plotter.stop()
 
     def save(self, plt_only=False, measurements_only=False):
         """Schreibt die Messdaten in einen spezifizierten Ordner."""

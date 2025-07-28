@@ -9,7 +9,6 @@ class LivePlotter:
     def __init__(self, use_grid=False):
         # self.fig, self.ax = plt.subplots()
         # self.data = []
-        self.stop_event = threading.Event()
 
         ####
 
@@ -33,8 +32,13 @@ class LivePlotter:
 
     def update_plot(self, frame, messdata):
         """Plottet die aktuell gemessene Messung."""
-        if self.stop_event.is_set():
-            plt.close(self.live_fig)
+        if messdata.stop_event.is_set() and hasattr(self, "live_ani"):
+            try:
+                self.live_ani.event_source.stop()
+                # self.live_ani.pause()
+                plt.close(self.live_fig)
+            except AttributeError as e:
+                print("Error stopping animation:", e, flush=True)
             return
 
         wav = messdata.wav
@@ -50,12 +54,6 @@ class LivePlotter:
 
         curr_measurement_index = messdata.curr_measurement_index
         curr_gradiant = messdata.curr_gradiant
-
-        # debug
-        print(
-            f"called update_plot with: {frame}, {len(measurements)}, {curr_measurement_index},{self.past_measurement_index}",
-            flush=True,
-        )
 
         if (
             len(measurements) == 0
@@ -78,20 +76,17 @@ class LivePlotter:
 
         # self.live_ax.scatter([], [], label="Mittelwert von 0 Messungen", s=5)
 
-    def start(self, frames, messdata_ref):
+    def start(self, frames, interval, messdata_ref):
         """Starts live plotting."""
         self.live_ani = FuncAnimation(
             fig=self.live_fig,
             func=self.update_plot,
-            interval=25,
-            # frames=frames,
+            frames=frames,
+            interval=interval,
             fargs=(messdata_ref,),
+            repeat=False,
+            cache_frame_data=False,
+            # RuntimeError: The animation function must return a sequence of Artist objects.
             # blit=True,
         )
         plt.show()
-
-    def stop(self):
-        """Stop the live plotting."""
-        self.stop_event.set()
-        if hasattr(self, "live_ani"):
-            self.live_ani.event_source.stop()
