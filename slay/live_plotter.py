@@ -33,13 +33,23 @@ class LivePlotter:
     def update_plot(self, frame, messdata):
         """Plottet die aktuell gemessene Messung."""
         if messdata.stop_event.is_set() and hasattr(self, "live_ani"):
-            try:
-                self.live_ani.event_source.stop()
-                # self.live_ani.pause()
-                plt.close(self.live_fig)
-            except AttributeError as e:
-                print("Error stopping animation:", e, flush=True)
-            return
+            # try:
+
+            # if (
+            #     hasattr(self, "live_ani")
+            #     and hasattr(self.live_ani, "event_source")
+            #     and self.live_ani.event_source is not None
+            # ):
+            #     self.live_ani.event_source.stop()
+            # self.live_ani.pause()
+            # self.live_ani.event_source.stop()
+            # del self.live_ani
+            # return
+            # schmeißt zwar exception, aber kann nichtt anders stoppen scheinbar
+            plt.close(self.live_fig)
+            # except AttributeError as e:
+            #     print("Error stopping animation:", e, flush=True)
+            # return
 
         wav = messdata.wav
         measurements = messdata.measurements
@@ -78,15 +88,21 @@ class LivePlotter:
 
     def start(self, frames, interval, messdata_ref):
         """Starts live plotting."""
-        self.live_ani = FuncAnimation(
-            fig=self.live_fig,
-            func=self.update_plot,
-            frames=frames,
-            interval=interval,
-            fargs=(messdata_ref,),
-            repeat=False,
-            cache_frame_data=False,
-            # RuntimeError: The animation function must return a sequence of Artist objects.
-            # blit=True,
-        )
-        plt.show()
+
+        try:
+            self.live_ani = FuncAnimation(
+                fig=self.live_fig,
+                func=self.update_plot,
+                frames=frames,
+                interval=interval,
+                fargs=(messdata_ref,),
+                repeat=False,
+                cache_frame_data=False,
+                # would have to return the artists to use blitting, which I am not doing right now
+                # blit=True,
+            )
+            plt.show()
+        except AttributeError as e:
+            print("Error starting animation:", e, flush=True)
+            # If plt.show() fails, we close the figure to avoid memory leaks
+        plt.close()

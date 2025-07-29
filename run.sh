@@ -68,15 +68,17 @@ usb_to_video() {
 
 run_docker_with_device() {
   local spec_path=$(get_usb_spec_path_by_ids "$1")
-  # serial_path=$(get_tty_path "1a86" "7523") # Arduino (not used anymore)
-  serial_path=$(get_tty_path "0403" "6001" "A5069RR4") # FT232 Serial
-  serial_path_usb=$(get_usb_path_by_serial "A5069RR4") # FT232 Serial USB path
+  # path to the FT232 Serial that is connected to the RX and TX pins of the ESP32 (and is used for communication with the MCU/ESP32)
+  serial_path=$(get_tty_path "0403" "6001" "A5069RR4")
+  # needed by usbreset
+  serial_path_usb=$(get_usb_path_by_serial "A5069RR4")
   cam_path=$(usb_to_video 0c45 62c0)
 
   nkt_path=$(get_tty_path "10c4" "ea60")
   # the LTB uses an FT232 too, it seems, thus having the same IDs, Thus checking for iSerial too
   # (lsusb -v -d 0403:6001 | grep iSerial)
   ltb_path=$(get_tty_path "0403" "6001" "FTDD2M08")
+  # needed by usbreset
   ltb_path_usb=$(get_usb_path_by_serial "FTDD2M08")
 
    local devices=""
@@ -123,16 +125,14 @@ run_docker_with_device() {
   echo "Using camera: $cam_path"
   echo
 
-  usbreset $serial_path_usb
-
-  dev_name=$(basename "$serial_path")
-
-  echo 1 | sudo tee /sys/bus/usb-serial/devices/"$dev_name"/latency_timer
-  sleep 0.5
-
   # ESP32
   usbreset "303a:1001"
-  usbreset $ltb_path_usb
+  # usbreset $ltb_path_usb
+  # set latency of the ESP32 serial buffer timer to 1ms
+  # usbreset $serial_path_usb
+  # dev_name=$(basename "$serial_path")
+  # echo 1 | sudo tee /sys/bus/usb-serial/devices/"$dev_name"/latency_timer
+  # sleep 0.5
 
   # the port is used to attach the debugger
   # --rm is used as the container is unusable as soon as it stops, as the devices have to be added again.

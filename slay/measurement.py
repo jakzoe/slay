@@ -405,6 +405,10 @@ class Measurement:
         self.sn.reset(self.spectrometer)
         self.led_green()
 
+        self.ltb.ser.close()
+        self.nkt.laser.close()
+        self.mcu.close()
+
     def test_measurement_duration(self, iters: int):
         """Misst die Zeit, die ein Messvorgang dauert."""
 

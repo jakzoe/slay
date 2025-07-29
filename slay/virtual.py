@@ -81,6 +81,12 @@ class LTB:
         self.baudrate = baudrate
         self.timeout = timeout
 
+        class Ser:
+            def close(self):
+                pass
+
+        self.ser = Ser()
+
     def _calculate_fcs(self, telegram: str) -> str:
         return "00"
 
@@ -199,6 +205,9 @@ class NKT:
 
     def ib_get_reg(self, laser_register, addr, val_type):
         return 0
+
+    def close(self):
+        pass
 
 
 class Spectrometer:

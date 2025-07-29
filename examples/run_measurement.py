@@ -46,14 +46,14 @@ if __name__ == "__main__":
         FILLING_QUANTITY=3,  # in ml
         OXYGEN_SPEED=50,  # cm^3 / min
         specto=MeasurementSettings.SpectoSettings(
-            INTTIME=2_000,  # 10000 # int(1000 * 60 * 0.5),
+            INTTIME=10_000,  # 10000 # int(1000 * 60 * 0.5),
             SCAN_AVG=1,
             SMOOTH=0,
             XTIMING=3,
             AMPLIFICATION=False,
         ),
         laser=MeasurementSettings.LaserSettings(
-            REPETITIONS=5,
+            REPETITIONS=30,
             MEASUREMENT_DELAY=3,
             IRRADITION_TIME=3,
             SERIAL_DELAY=3,
@@ -63,13 +63,13 @@ if __name__ == "__main__":
             # PULSE_DELAY_445="100",
             PWM_FREQ_405="2000",
             PWM_RES_BITS_405="13",
-            PWM_DUTY_PERC_405="np.linspace(0, 1, 10)",
+            PWM_DUTY_PERC_405="0.0035",  # np.linspace(0.2, 1, 5)
             #
             PWM_FREQ_445="2000",
             PWM_RES_BITS_445="13",
-            PWM_DUTY_PERC_445="np.linspace(0, 1, 10)",
+            PWM_DUTY_PERC_445="0.0037",  # np.linspace(0.2, 1, 5)
             #
-            REPETITIONS_LTB="range(5,55,5)",
+            REPETITIONS_LTB="5",  # range(5,55,10)
             INTENSITY_LTB="8",
             ND_NKT=0,
             ND_405=0,
@@ -93,6 +93,7 @@ if __name__ == "__main__":
     # exit()
 
     try:
+        # aktuell kann man danach keine neue Messungg starten/muss ein neues Objekt initialisieren
         measurement.measure()
         measurement.save()
     except KeyboardInterrupt as e:
