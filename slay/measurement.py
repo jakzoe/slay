@@ -19,6 +19,7 @@ import os
 import time
 import datetime
 import numpy as np
+from appdirs import user_cache_dir
 
 np.set_printoptions(suppress=True)
 
@@ -136,16 +137,14 @@ class Measurement:
             "/Kontinuierlich" if self.MEASUREMENT_SETTINGS.laser.CONTINOUS else "/Puls"
         )
 
-        self.type_dir = dir_path + name + "/"
-        os.makedirs(self.type_dir, 0o777, exist_ok=True)
+        self.code_save_dir = dir_path + name + "/"
 
-        self.code_name = "overwrite-messung"
+        self.code_file_name = "overwrite-messung"
         if self.MEASUREMENT_SETTINGS.UNIQUE:
             # manche Dateisysteme unterstützen keinen Doppelpunkt im Dateinamen
-            self.code_name = str(datetime.datetime.now()).replace(":", "_")
+            self.code_file_name = str(datetime.datetime.now()).replace(":", "_")
 
-        self.file_name = self.type_dir + self.code_name
-        self.cam = USBCamera(cam_path, self.file_name)
+        self.cam = USBCamera(cam_path, self.code_save_dir + self.code_file_name)
 
     def set_laser_powers(self, index):
 
@@ -663,13 +662,24 @@ class Measurement:
 
         self.stop_all_devices()
 
-    def save(self, plt_only=False, measurements_only=False):
+    def save(self, plt_only=False, measurements_only=False, save_to_cache=False):
         """Schreibt die Messdaten in einen spezifizierten Ordner."""
         # gemeinsame Typen werden in einem gemeinsamen Ordner gespeichert
 
+        if save_to_cache:
+            assert not plt_only and measurements_only
+
+            cache_name = os.path.basename(os.path.dirname(__file__))
+            save_dir = user_cache_dir(cache_name)
+            print(f"saving to cache: {save_dir}", flush=True)
+        else:
+            save_dir = self.code_save_dir
+
+        os.makedirs(save_dir, 0o777, exist_ok=True)
+
         if not plt_only:
             with open(
-                self.file_name + ".json",
+                save_dir + self.code_file_name + ".json",
                 "w",
                 encoding="utf-8",
             ) as json_file:
@@ -687,16 +697,16 @@ class Measurement:
             # metadata[8] = int(self.MEASUREMENT_SETTINGS["laser"]["CONTINOUS"])
 
             np.savez_compressed(
-                self.file_name,
+                save_dir + self.code_file_name,
                 np.array(self.messdata.measurements),
                 np.array(self.messdata.wav),
                 np.array(self.messdata.timestamps),
             )
-            os.chmod(self.file_name + ".npz", 0o777)
+            os.chmod(save_dir + self.code_file_name + ".npz", 0o777)
 
         if not measurements_only:
             SpectrumPlot.plot_results(
-                [PlotSettings(self.type_dir, self.code_name, True)],
+                [PlotSettings(save_dir, self.code_file_name, True)],
                 self.MEASUREMENT_SETTINGS,
             )
 
