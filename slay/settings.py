@@ -22,28 +22,25 @@ class MeasurementSettings:
         MEASUREMENT_DELAY: int  # ms, die zwischen jeder Messung gewartet werden sollen
         IRRADITION_TIME: int  # ms, die auf das Chlorophyll gestrahlt wird. Mind. 3 ms, ist sonst zu schnell für den Arduino
         SERIAL_DELAY: int  # ms, die auf den MCU gewartet wird. Mind. 3 ms, ist sonst zu schnell für den Arduino
-        INTENSITY_NKT: str  # in Prozent bis 1
+        INTENSITY_NKT: str  # in Prozent bis 100
 
         PWM_FREQ_405: str
         PWM_RES_BITS_405: str
-        PWM_DUTY_PERC_405: str  # in Prozent bis 1, wird später in Counts umgerechnet
+        PWM_DUTY_PERC_405: str  # in Prozent bis 100, wird später in Counts umgerechnet
 
         PWM_FREQ_445: str
         PWM_RES_BITS_445: str
         PWM_DUTY_PERC_445: str
-        # INTENSITY_405: str  # PWM-Signal
-        # NUM_PULSES_445: str  # Pulse, die der Arduino sendet. In Clock-Zyklen.
-        # PULSE_DELAY_445: str  # Pause zwischen den Pulsen
 
         ND_NKT: int  # ND-Wert des Filters, der dazwischen ist
         ND_405: int
         ND_445: int
         CONTINOUS: bool  # Laser durchgängig angeschaltet lassen oder nicht
-        # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0
+        # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0. Range 0 bis 100
         INTENSITY_LTB: str = "0"
-        # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0
+        # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0. Range 0 bis 60
         REPETITIONS_LTB: str = "0"
-        # # z. B. mit einem Blatt testen, wie weit der Fokuspunkt der Diodenlaser von der Küvette entfernt sind
+        # mit einem Blatt testen, wie weit der Fokuspunkt der Diodenlaser von der Küvette entfernt sind
         FOCUS_DIST: int = 0
 
         def __post_init__(self):
@@ -169,7 +166,7 @@ class MeasurementSettings:
 
             self.num_gradiants = max_len
 
-    UNIQUE: bool  # neue Messungen überschreiben alte Messungen, wenn sie keinen eindeutigen Namen haben
+    UNIQUE: bool  # neue Messungen überschreibnum_gradiantsen alte Messungen, wenn sie keinen eindeutigen Namen haben
     TYPE: str  # Name der Messung
     CUVETTE_WINDOWS: (
         int  # Anzahl der Fenster der verwendeten Küvette. Normalerweise zwei oder vier.
@@ -182,6 +179,18 @@ class MeasurementSettings:
         0  # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0
     )
     OXYGEN_SPEED: int = 0  # wie viel Luft pro Minute gepumpt wird.
+
+    def __post_init__(self):
+        # in ms, Abschätzung
+        if self.laser.CONTINOUS:
+            self.measurement_time = self.specto.INTTIME + self.laser.MEASUREMENT_DELAY
+        else:
+            self.measurement_time = (
+                2 * self.laser.SERIAL_DELAY
+                + self.laser.IRRADITION_TIME
+                + self.specto.INTTIME
+                + self.laser.MEASUREMENT_DELAY
+            )
 
     def save_as_json(self, json_file):
         json.dump(asdict(self), json_file, indent=4)
