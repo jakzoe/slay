@@ -34,7 +34,7 @@ uint16_t MAX_DUTY_VAL_NITRO = (uint16_t)(pow(2, PWM_RES_BITS_NITRO) - 1);
 
 // PWM Pin
 #define LASER_PIN_405 8
-#define LASER_PIN_445 2
+#define LASER_PIN_445 5
 #define LASER_PIN_NITROGEN 7
 
 // wenn der 445 nm Laser kein PWM erhält, erreicht er die maximale Leistung.
@@ -359,7 +359,7 @@ void enableLocks()
 
   digitalWrite(LASER_PIN_445_KILL_SWITCH, LOW);
   pinMode(LASER_PIN_445_KILL_SWITCH, OUTPUT);
-  digitalWrite(LASER_PIN_SUPERCON, HIGH);
+  digitalWrite(LASER_PIN_SUPERCON, LOW);
 
   // nur den duty cycle auf 0 setzen würde vermutlich dazu führen, dass es beim Resetten des PWM-Timers einen voltage-spike von einem Clock-Cycle gibt.
   ledcDetach(LASER_PIN_405);
@@ -392,8 +392,7 @@ void turnLasersOn()
 
   ledcWrite(LASER_PIN_405, pwmDutyVal405);
   ledcWrite(LASER_PIN_NITROGEN, getLTBDutyVal());
-  // pull-up resistor, thus inverted logic
-  digitalWrite(LASER_PIN_SUPERCON, LOW);
+  digitalWrite(LASER_PIN_SUPERCON, HIGH);
 
   if (pwmDutyVal445 == 1234 || DISABLE_PWM_445)
   {
