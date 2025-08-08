@@ -33,7 +33,10 @@ RUN mkdir -p ${INSTALL_PATH}
 # RUN apt -y install libgirepository-2.0-dev
 
 # PyGObject as an alternative to the larger matplotlib backend tkinter:
-RUN /usr/local/bin/pip3 install pyusb pyserial numpy matplotlib PyGObject==3.50.0 SciencePlots pylablib opencv-python
+RUN /usr/local/bin/pip3 install pyusb pyserial numpy matplotlib SciencePlots pylablib opencv-python appdirs
+# RUN apt-get -y install girepository-2.0
+RUN /usr/local/bin/pip3 install PyGObject==3.50.0
+# RUN apt-get -y install python3-gi
 # SciencePlots is able to use LaTeX (can be disabled using 'no-latex')
 RUN apt-get -y install dvipng texlive-latex-extra texlive-fonts-recommended cm-super
 
