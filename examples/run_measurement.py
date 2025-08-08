@@ -39,38 +39,35 @@ if __name__ == "__main__":
 
     measurement_settings = MeasurementSettings(
         UNIQUE=False,
-        TYPE="Chloro_Jufo",  # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Blub # Neutral_Mit_Spiegel # Mittel_Bier_Indirekt # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Blub # Radieschen_Direkt_Unfokussiert # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Nur_Bodensatz_Also_Toll
-        CUVETTE_WINDOWS=2,
+        TYPE="Riboflavin",  # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Blub # Neutral_Mit_Spiegel # Mittel_Bier_Indirekt # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Blub # Radieschen_Direkt_Unfokussiert # Chlorophyll_Ohne_Amp_Rhombus_Unfokussiert_Nur_Bodensatz_Also_Toll
+        CUVETTE_WINDOWS=4,
         TIMEOUT=1000000,  # disable
         WATCHDOG_GRACE=200,
-        FILLING_QUANTITY=3,  # in ml
-        OXYGEN_SPEED=50,  # cm^3 / min
+        FILLING_QUANTITY=-1,  # in ml
+        OXYGEN_SPEED=-1,  # 50 cm^3 / min
         specto=MeasurementSettings.SpectoSettings(
-            INTTIME=10_000,  # 10000 # int(1000 * 60 * 0.5),
+            INTTIME=9_000,  # 10000 # int(1000 * 60 * 0.5),
             SCAN_AVG=1,
             SMOOTH=0,
             XTIMING=3,
             AMPLIFICATION=False,
         ),
         laser=MeasurementSettings.LaserSettings(
-            REPETITIONS=30,
+            REPETITIONS=10,
             MEASUREMENT_DELAY=3,
             IRRADITION_TIME=3,
             SERIAL_DELAY=3,
-            INTENSITY_NKT="0",  # "np.linspace(0, 1, 10)",  # in Prozent von 0 bis 1 #
-            # INTENSITY_405="255",  # kaum noch sichtbar unter 60
-            # NUM_PULSES_445="200",  # range(0, 200, 20) # 1234 heißt kein PWM
-            # PULSE_DELAY_445="100",
+            INTENSITY_NKT="10",  # "np.linspace(0, 100, 10)",
             PWM_FREQ_405="2000",
             PWM_RES_BITS_405="13",
-            PWM_DUTY_PERC_405="0.0035",  # np.linspace(0.2, 1, 5)
+            PWM_DUTY_PERC_405="0.37",  # np.linspace(0.2, 1, 5)
             #
             PWM_FREQ_445="2000",
             PWM_RES_BITS_445="13",
-            PWM_DUTY_PERC_445="0.0037",  # np.linspace(0.2, 1, 5)
+            PWM_DUTY_PERC_445="0.37",  # np.linspace(0.2, 1, 5)
             #
-            REPETITIONS_LTB="5",  # range(5,55,10)
-            INTENSITY_LTB="8",
+            REPETITIONS_LTB="6",  # range(5,55,10)
+            INTENSITY_LTB="100",
             ND_NKT=0,
             ND_405=0,
             ND_445=0,

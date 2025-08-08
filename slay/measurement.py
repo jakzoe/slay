@@ -155,9 +155,9 @@ class Measurement:
             pow(2, self.MEASUREMENT_SETTINGS.laser.PWM_RES_BITS_405[index]) - 1
         )
 
-        assert self.MEASUREMENT_SETTINGS.laser.PWM_DUTY_PERC_405[index] <= 1
-        assert self.MEASUREMENT_SETTINGS.laser.PWM_DUTY_PERC_445[index] <= 1
-        assert self.MEASUREMENT_SETTINGS.laser.INTENSITY_NKT[index] <= 1
+        assert 0 <= self.MEASUREMENT_SETTINGS.laser.PWM_DUTY_PERC_405[index] <= 100
+        assert 0 <= self.MEASUREMENT_SETTINGS.laser.PWM_DUTY_PERC_445[index] <= 100
+        assert 0 <= self.MEASUREMENT_SETTINGS.laser.INTENSITY_NKT[index] <= 100
 
         self.set_firmware_variable(
             "Dut405",
@@ -169,7 +169,7 @@ class Measurement:
         self.set_firmware_variable(
             "Dut445",
             int(
-                self.MEASUREMENT_SETTINGS.laser.PWM_DUTY_PERC_445[index]
+                (self.MEASUREMENT_SETTINGS.laser.PWM_DUTY_PERC_445[index] / 100.0)
                 * max_pwm_counts_445
             ),
         )
@@ -227,11 +227,12 @@ class Measurement:
         print(f"NKT: max freq is {max_freq}")
         # um auch Bruchteile zu erlauben
         freq = int(
-            max_freq / 100 * self.MEASUREMENT_SETTINGS.laser.INTENSITY_NKT[index]
+            max_freq / (self.MEASUREMENT_SETTINGS.laser.INTENSITY_NKT[index] / 100.0)
         )
         self.nkt.set_register("pulse_frequency", freq)
         print(f"NKT: Frequenz auf {freq} gesetzt.")
-        self.nkt.set_register("operating_mode", 4)  # external trigger high signl
+        # external trigger off (laser on on low signal)
+        self.nkt.set_register("operating_mode", 5)
 
         # # falls er davor ausging, da [index-1] 0 war.
         # try:
@@ -467,11 +468,18 @@ class Measurement:
 
         total_time_millis = int(round(time.time() * 1000)) - int(round(seconds * 1000))
         print(f"measurements took: {total_time_millis} ms")
-        delays_time = (
-            self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY
-            + 2 * self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY
-            + self.MEASUREMENT_SETTINGS.laser.IRRADITION_TIME
-        ) * self.MEASUREMENT_SETTINGS.laser.REPETITIONS
+        if not self.MEASUREMENT_SETTINGS.laser.CONTINOUS:
+            delays_time = (
+                self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY
+                + 2 * self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY
+                + self.MEASUREMENT_SETTINGS.laser.IRRADITION_TIME
+            ) * self.MEASUREMENT_SETTINGS.laser.REPETITIONS
+        else:
+            delays_time = (
+                self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY
+                * self.MEASUREMENT_SETTINGS.laser.REPETITIONS
+                + 2 * self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY
+            )
         print(f"thereof delays: {delays_time} ms")
         print(
             f"a measurement took: {total_time_millis / 1.0 / self.MEASUREMENT_SETTINGS.laser.REPETITIONS} ms"
@@ -479,6 +487,10 @@ class Measurement:
         print("without delays:")
         print(
             f"a measurement took: {(total_time_millis - delays_time) / 1.0 / self.MEASUREMENT_SETTINGS.laser.REPETITIONS} ms"
+        )
+        print(
+            f"(should be roughly {self.MEASUREMENT_SETTINGS.specto.INTTIME})",
+            flush=True,
         )
 
     def mcu_watchdog(self):
@@ -519,6 +531,11 @@ class Measurement:
             print("turned on lasers", flush=True)
             self.time_measurement(measure)
 
+        # ggf. schon wieder aus weil zu große Integrationszeit
+        try:
+            self.ltb.activate_external_trigger()
+        except LaserProtocolError as e:
+            print(e)
         measure_func()
         # self.watchdog_wrap(self.mcu_watchdog, measure_func)
 
@@ -640,7 +657,7 @@ class Measurement:
                 live_plotter.start(
                     self.messdata.measurements.shape[0]
                     * self.messdata.measurements.shape[1],
-                    max(self.MEASUREMENT_SETTINGS.specto.INTTIME, 300),
+                    max(self.MEASUREMENT_SETTINGS.measurement_time, 300),
                     self.messdata,
                 )
 
