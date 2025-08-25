@@ -134,17 +134,26 @@ run_docker_with_device() {
   # echo 1 | sudo tee /sys/bus/usb-serial/devices/"$dev_name"/latency_timer
   # sleep 0.5
 
+
+  # save intemediate results in the cache directory
+  # cache_dir="$XDG_CACHE_HOME/$(basename "$(pwd)")"
+  cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/$(basename "$(dirname "$(realpath "$0")")")"
+  mkdir -p "$cache_dir"
+  docker_mount_point=/tmp/"$(basename "$cache_dir")"
+  # cache_dir="$XDG_CACHE_HOME/spectro-measurements-cache"
+
   # the port is used to attach the debugger
   # --rm is used as the container is unusable as soon as it stops, as the devices have to be added again.
   # Simply restarting would not work therefore.
   docker run -v /home/user/slay/myproject/slay:/root/slay \
     -e "DISPLAY=$DISPLAY" \
     --mount type=bind,src=/tmp/.X11-unix,dst=/tmp/.X11-unix \
+    --mount type=bind,src="$cache_dir",dst="$docker_mount_point" \
     --device=/dev/dri:/dev/dri \
     --rm \
     -p 5678:5678 \
     $devices \
-    "laserdocker:$DOCKER_MODE" "$serial_path" "$nkt_path" "$ltb_path" "$cam_path"
+    "laserdocker:$DOCKER_MODE" "$serial_path" "$nkt_path" "$ltb_path" "$cam_path" "$docker_mount_point"
     
   return $?
 }

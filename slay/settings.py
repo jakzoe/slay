@@ -236,8 +236,7 @@ class PlotSettings:
 
     def __init__(
         self,
-        file_path,
-        code_name,
+        measurement_path,
         smooth,
         grad_start=default_min,
         grad_end=default_max,
@@ -253,9 +252,8 @@ class PlotSettings:
         scatter=False,
         interpolate=False,
     ):
-        self.file_path = file_path
-        # Name des Plots beim Speichern. Der "Code" repräsentiert den Code-Namen des "Plot-Projekts"
-        self.code_name = code_name
+        # die Messung, welches geplottet werden soll.
+        self.measurement_path = measurement_path
         self.smooth = smooth
 
         self.grad_start = grad_start

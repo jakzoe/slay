@@ -7,7 +7,7 @@ from slay.lasers import LTB
 from slay.lasers import LaserProtocolError
 from slay.camera import USBCamera
 from slay.live_plotter import LivePlotter
-
+from slay.backup_service import BackupService
 
 from multiprocessing import Process
 from threading import Thread, Event
@@ -66,8 +66,9 @@ class Measurement:
         nkt_path: str,
         ltb_path: str,
         cam_path: str,
+        cache_dir: str,
         MEASUREMENT_SETTINGS: MeasurementSettings,
-        dir_path: str,
+        measurements_dir: str,
     ):
 
         try:
@@ -103,7 +104,7 @@ class Measurement:
             (self.init_spectrometer, ()),
             (self.init_mcu, (serial_path, 3)),
             (self.init_nkt, (nkt_path,)),
-            (self.init_ltb, (ltb_path,)),
+            # (self.init_ltb, (ltb_path,)),
         )
 
         # ProcessPoolExecutor funktioniert nur, wenn die Funktionen/Argumente gepickelt werden können (außerhalb der Klasse definiert etc.)
@@ -115,11 +116,8 @@ class Measurement:
         # self.init_spectrometer()
         # self.init_mcu(serial_path, wait=3)
         # self.init_nkt(nkt_path)
-        # self.init_ltb(ltb_path)
+        self.init_ltb(ltb_path)
 
-        print(
-            f"Finished initializing the measurement in {time.time() - start_time:.2f} seconds."
-        )
         self.messdata = SpectrumData(
             self.MEASUREMENT_SETTINGS.laser.num_gradiants,
             self.MEASUREMENT_SETTINGS.laser.REPETITIONS,
@@ -129,22 +127,29 @@ class Measurement:
         self.set_laser_powers(0)
         # aktuell noch keine Output-Power
         self.led_green()
-        print("Finished initializing the measurement.")
-
+        print(
+            f"Finished initializing the measurement in {time.time() - start_time:.2f} seconds.",
+            flush=True,
+        )
         # Speicherort definieren
-        name = "DEBUG" if self.DEBUG else self.MEASUREMENT_SETTINGS.TYPE
-        name += (
+        measurement_type = "DEBUG" if self.DEBUG else self.MEASUREMENT_SETTINGS.TYPE
+        measurement_type += (
             "/Kontinuierlich" if self.MEASUREMENT_SETTINGS.laser.CONTINOUS else "/Puls"
         )
 
-        self.code_save_dir = dir_path + name + "/"
+        self.measurement_save_dir = os.path.join(measurements_dir, measurement_type)
+        # manche Dateisysteme unterstützen keinen Doppelpunkt im Dateinamen
+        self.measurement_file_name = (
+            "overwrite-messung"
+            if not self.MEASUREMENT_SETTINGS.UNIQUE
+            else str(datetime.datetime.now()).replace(":", "_")
+        )
 
-        self.code_file_name = "overwrite-messung"
-        if self.MEASUREMENT_SETTINGS.UNIQUE:
-            # manche Dateisysteme unterstützen keinen Doppelpunkt im Dateinamen
-            self.code_file_name = str(datetime.datetime.now()).replace(":", "_")
-
-        self.cam = USBCamera(cam_path, self.code_save_dir + self.code_file_name)
+        self.cam = USBCamera(
+            cam_path,
+            os.path.join(self.measurement_save_dir, self.measurement_file_name),
+        )
+        self.backup_service = BackupService(self, self.messdata, cache_dir)
 
     def set_laser_powers(self, index):
 
@@ -227,7 +232,7 @@ class Measurement:
         print(f"NKT: max freq is {max_freq}")
         # um auch Bruchteile zu erlauben
         freq = int(
-            max_freq / (self.MEASUREMENT_SETTINGS.laser.INTENSITY_NKT[index] / 100.0)
+            max_freq * (self.MEASUREMENT_SETTINGS.laser.INTENSITY_NKT[index] / 100.0)
         )
         self.nkt.set_register("pulse_frequency", freq)
         print(f"NKT: Frequenz auf {freq} gesetzt.")
@@ -400,7 +405,8 @@ class Measurement:
         self.nkt.set_register("emission", 0)
         # manuelles triggern erlauben und (vorsichtshalber) die power runterstellen.
         self.nkt.set_register("power", 1)
-        self.nkt.set_register("operating_mode", 0)  # internal trigger
+        # internal trigger
+        self.nkt.set_register("operating_mode", 0)
         # Spektrometer freigeben
         self.sn.reset(self.spectrometer)
         self.led_green()
@@ -497,8 +503,8 @@ class Measurement:
         while True:
             self.send_firmware_signal("3")
             time.sleep(
-                self.MEASUREMENT_SETTINGS.specto.INTTIME / 1000
-                + self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000
+                self.MEASUREMENT_SETTINGS.specto.INTTIME / 1000.0
+                + self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000.0
             )
 
     def ltb_watchdog(self):
@@ -532,10 +538,10 @@ class Measurement:
             self.time_measurement(measure)
 
         # ggf. schon wieder aus weil zu große Integrationszeit
-        try:
-            self.ltb.activate_external_trigger()
-        except LaserProtocolError as e:
-            print(e)
+        # try:
+        #     self.ltb.activate_external_trigger()
+        # except LaserProtocolError as e:
+        #     print(e)
         measure_func()
         # self.watchdog_wrap(self.mcu_watchdog, measure_func)
 
@@ -567,8 +573,8 @@ class Measurement:
         #     while True:
         #         self.send_firmware_signal("3")
         #         time.sleep(
-        #             self.MEASUREMENT_SETTINGS.specto.INTTIME / 1000
-        #             + self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000
+        #             self.MEASUREMENT_SETTINGS.specto.INTTIME / 1000.0
+        #             + self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000.0
         #         )
         #         data = self.mcu.read(self.mcu.inWaiting())
         #         if data != b"":
@@ -631,6 +637,8 @@ class Measurement:
 
     def measure(self, gui=True):
 
+        print("staring a measurement", flush=True)
+
         ltb_p = Process(
             target=self.ltb_watchdog,
             daemon=True,
@@ -645,11 +653,20 @@ class Measurement:
             daemon=True,
         )
 
+        backup_p = Thread(
+            target=self.backup_service.start,
+            daemon=True,
+        )
+        print("made threads", flush=True)
         try:
             ltb_p.start()
             self.cam.start()
+            print("started cam", flush=True)
+            if self.MEASUREMENT_SETTINGS.UNIQUE:
+                backup_p.start()
             if self.MEASUREMENT_SETTINGS.laser.CONTINOUS:
                 mcu_p.start()
+            print("staring a measurement process", flush=True)
             measure_p.start()
 
             if gui:
@@ -679,24 +696,23 @@ class Measurement:
 
         self.stop_all_devices()
 
-    def save(self, plt_only=False, measurements_only=False, save_to_cache=False):
+    def save(self, plt_only=False, measurements_only=False, cache_path: str = ""):
         """Schreibt die Messdaten in einen spezifizierten Ordner."""
         # gemeinsame Typen werden in einem gemeinsamen Ordner gespeichert
 
-        if save_to_cache:
+        # impliziert, dass zum cache geschrieben werden soll
+        if cache_path:
             assert not plt_only and measurements_only
-
-            cache_name = os.path.basename(os.path.dirname(__file__))
-            save_dir = user_cache_dir(cache_name)
+            save_dir = cache_path
             print(f"saving to cache: {save_dir}", flush=True)
         else:
-            save_dir = self.code_save_dir
+            save_dir = self.measurement_save_dir
 
         os.makedirs(save_dir, 0o777, exist_ok=True)
 
         if not plt_only:
             with open(
-                save_dir + self.code_file_name + ".json",
+                os.path.join(save_dir, self.measurement_file_name + ".json"),
                 "w",
                 encoding="utf-8",
             ) as json_file:
@@ -714,21 +730,23 @@ class Measurement:
             # metadata[8] = int(self.MEASUREMENT_SETTINGS["laser"]["CONTINOUS"])
 
             np.savez_compressed(
-                save_dir + self.code_file_name,
+                os.path.join(save_dir, self.measurement_file_name),
                 np.array(self.messdata.measurements),
                 np.array(self.messdata.wav),
                 np.array(self.messdata.timestamps),
             )
-            os.chmod(save_dir + self.code_file_name + ".npz", 0o777)
+            os.chmod(os.path.join(save_dir, self.measurement_file_name + ".npz"), 0o777)
 
         if not measurements_only:
             SpectrumPlot.plot_results(
-                [PlotSettings(save_dir, self.code_file_name, True)],
+                [
+                    PlotSettings(
+                        os.path.join(
+                            self.measurement_save_dir,
+                            self.measurement_file_name + ".npz",
+                        ),
+                        True,
+                    )
+                ],
                 self.MEASUREMENT_SETTINGS,
             )
-
-    def plot_path(self, settings, m_settings=None):
-        SpectrumPlot.plot_results(
-            settings,
-            self.MEASUREMENT_SETTINGS if m_settings is None else m_settings,
-        )
