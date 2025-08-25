@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 delete_old_pictures = True
-# um schnell bestimmtes zu exkludieren
+# Flags um schnell bestimmte plots nicht zu generieren
 plot_general = True
 plot_fluo = True
 plot_interpolate_only = False
@@ -63,11 +63,13 @@ def make_plots(path, name):
 
     p_settings = []
 
-    m_settings = MeasurementSettings.from_json(os.path.join(path, name + ".json"))
+    measurement_path = os.path.join(path, name + ".npz")
+    measurement_path_json = os.path.join(path, name + ".json")
+    m_settings = MeasurementSettings.from_json(measurement_path_json)
 
     # Generellen Durchschnitt plotten
     if plot_general:
-        p_settings.append([PlotSettings(path, name, smooth=True)])
+        p_settings.append([PlotSettings(measurement_path, smooth=True)])
 
     # Fluoreszenz-Peak plotten (ca. zwischen 720 und 740 nm bei Chlorophyll)
     if plot_fluo:
@@ -76,8 +78,7 @@ def make_plots(path, name):
             (
                 [
                     PlotSettings(
-                        path,
-                        name,
+                        measurement_path,
                         smooth=True,
                         single_wav=730,
                         scatter=True,
@@ -85,8 +86,7 @@ def make_plots(path, name):
                 ],
                 [
                     PlotSettings(
-                        path,
-                        name,
+                        measurement_path,
                         smooth=True,
                         single_wav=740,
                         scatter=True,
@@ -94,8 +94,7 @@ def make_plots(path, name):
                 ],
                 [
                     PlotSettings(
-                        path,
-                        name,
+                        measurement_path,
                         smooth=True,
                         single_wav=750,
                         scatter=True,
@@ -110,8 +109,7 @@ def make_plots(path, name):
                     #     scatter=True,
                     # ),
                     PlotSettings(
-                        path,
-                        name,
+                        measurement_path,
                         smooth=True,
                         single_wav=530,
                         scatter=True,
@@ -138,8 +136,7 @@ def make_plots(path, name):
         p_settings.append(
             [
                 PlotSettings(
-                    path,
-                    name,
+                    measurement_path,
                     smooth=True,
                     interval_start=0,
                     interval_end=1 / 3,
@@ -148,8 +145,7 @@ def make_plots(path, name):
                     color="black",
                 ),
                 PlotSettings(
-                    path,
-                    name,
+                    measurement_path,
                     smooth=True,
                     interval_start=1 / 3,
                     interval_end=2 / 3,
@@ -157,8 +153,7 @@ def make_plots(path, name):
                     color="red",
                 ),
                 PlotSettings(
-                    path,
-                    name,
+                    measurement_path,
                     smooth=True,
                     interval_start=2 / 3,
                     interval_end=3 / 3,
@@ -201,15 +196,16 @@ if __name__ == "__main__":
 
     # exit()
 
-    # die ganzen Symblinks löschen
-    if delete_old_pictures:
-        try:
-            shutil.rmtree("plots/")
-        except FileNotFoundError:
-            print("plots dir was already deleted")
+    # # die ganzen Symblinks löschen
+    # if delete_old_pictures:
+    #     try:
+    #         shutil.rmtree("plots/")
+    #     except FileNotFoundError:
+    #         print("plots dir was already deleted")
 
     paths = []
-    root = "messungen/"
+    # root = "messungen/"
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "messungen/")
     for dir in os.listdir(root):
         for subdir in os.listdir(os.path.join(root, dir)):
             paths.append(os.path.join(root, dir, subdir))
@@ -242,10 +238,13 @@ if __name__ == "__main__":
         for name in names:
             tasks.append((path, name))
 
-    # for task in tasks:
-    #     make_plots(*task)
-
+    # print(tasks)
     # exit()
+    for task in tasks:
+        make_plots(*task)
+
+    print("generated plots!", flush=True)
+    exit()
 
     # lambda geht nicht...
     def worker(args):
@@ -264,7 +263,7 @@ if __name__ == "__main__":
 
     print(f"took: {time.time() - start_time:.2f} s")
 
-    sync_messungen_pics()
+    # sync_messungen_pics()
     # 12: took: 44.83 s
     # 8: took: 49.54 s
     # 4: took: 83.07 s

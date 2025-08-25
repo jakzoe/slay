@@ -1,7 +1,10 @@
-from slay.settings import MeasurementSettings
-from slay.settings import PlotSettings
-
+import os
+import sys
+import copy
+from math import ceil, floor
 import numpy as np
+import scipy
+
 from matplotlib.ticker import MultipleLocator
 
 # andere backends sind ebenfalls möglich, brauchen aber teilweise andere dependencies
@@ -25,13 +28,11 @@ plt.style.use(["science"])
 # wird es dennoch zumindest zu einem overlapping label kommen. Dieses wird im Fall der Fälle auomatisch unter den Plot "verschoben" (siehe legend_collides)
 plt.rcParams["figure.constrained_layout.use"] = True
 
-import os
-import sys
-import scipy
-import copy
-from math import ceil, floor
-
 from dataclasses import dataclass
+import json
+
+from slay.settings import MeasurementSettings
+from slay.settings import PlotSettings
 
 
 class SpectrumPlot:
@@ -146,6 +147,10 @@ class SpectrumPlot:
     @staticmethod
     def data_to_plot(settings: GraphSettings, collide_graph=False):
 
+        if all(settings.y_data == 0):
+            print("settings.y_data == 0!!!", flush=True)
+            return False
+
         def smooth_curve(array):
             return scipy.signal.savgol_filter(array, window_length=50, polyorder=5)
 
@@ -165,6 +170,7 @@ class SpectrumPlot:
                 np.max(line_data),
             )
 
+            assert extent[2] != extent[3]  # np.min(line_data) != np.max(line_data)
             clim = (350, 780)
             norm = plt.Normalize(*clim)
             wl = np.arange(clim[0], clim[1] + 1, 2)
@@ -271,14 +277,21 @@ class SpectrumPlot:
             n = linear_curve[1]
             x_fitted = np.array([cut_data_x[0], cut_data_x[-1]])
             y_fitted = m * x_fitted + n
+
+            if m == 0:
+                label_str = rf"$\text{{g}}(x) \approx {n:.0f}$"
+            elif n == 0:
+                label_str = rf"$\text{{g}}(x) \approx {m:.2f}x$"
+            else:
+                sign = "+" if n > 0 else ""
+                label_str = rf"$\text{{g}}(x) \approx {m:.2f}x{sign}{n:.0f}$"
+
             settings.ax.plot(
                 x_fitted,
                 y_fitted,
                 color="red",
-                linewidth=settings.marker_size,
-                label=r"$\text{{g}}(x) \approx {:.2f}x{}{:.0f}$".format(
-                    m, "" if n < 0 else "+", n
-                ),
+                # linewidth=2,
+                label=label_str,
             )
             # verhindern, dass das Label gar nicht erst erstellt wird (siehe if weiter unten)
             settings.label = " " if settings.label is None else settings.label
@@ -304,15 +317,31 @@ class SpectrumPlot:
             c = parameter[2]
             y_fitted_expo = a * np.exp(b * x_fitted) + c
             b_format = f"{b:.2e}".split("e")
+            b_coeff = float(b_format[0])
+            b_exp = int(b_format[1])
+
+            if b_exp == 0:
+                exponent_str = f"{b_coeff:.2f} t"
+            else:
+                exponent_str = f"{b_coeff:.2f} \\cdot 10^{{{b_exp}}} t"
+
+            if c == 0:
+                c_str = ""
+            elif c > 0:
+                c_str = f"+{c:.0f}"
+            else:
+                c_str = f"{c:.0f}"
+
+            label_str = (
+                rf"$\text{{exp}}(x) \approx {a:.0f} e^{{{exponent_str}}} {c_str}$"
+            )
 
             settings.ax.plot(
                 x_fitted,
                 y_fitted_expo,
                 color="orange",
-                linewidth=settings.marker_size,
-                label=r"$\text{{exp}}(x) \approx {:.0f} e^{{ {} \cdot 10^{{{:.0f}}} t}} {}{:.0f}$".format(
-                    a, float(b_format[0]), float(b_format[1]), "" if c < 0 else "+", c
-                ),
+                # linewidth=2,
+                label=label_str,
             )
 
         # die Daten im Scatter-Plot aktualisieren
@@ -468,6 +497,15 @@ class SpectrumPlot:
 
         # ob mehrere Graphen geplottet werden
         multiple_plots = len(plotting_settings) != 1
+        # multiple_same_type_plots = all(
+        #     os.path.dirname(setting.measurement_path)
+        #     == os.path.dirname(plotting_settings[0].measurement_path)
+        #     for setting in plotting_settings
+        # )
+        common_root = os.path.commonpath(
+            [os.path.dirname(setting.measurement_path) for setting in plotting_settings]
+        )
+
         time_plot = not multiple_plots and plotting_settings[0].single_wav
         for i, orig_setting in enumerate(plotting_settings):
 
@@ -477,11 +515,7 @@ class SpectrumPlot:
             #     if f.endswith(".npz")
             # ]
 
-            file_name = os.path.join(
-                orig_setting.file_path, orig_setting.code_name + ".npz"
-            )
-
-            loaded_array = np.load(file_name)
+            loaded_array = np.load(orig_setting.measurement_path)
             spectrometer_data_gradient = loaded_array["arr_0"]
             # die Wellenlängen des Spektrometers
             x_data = loaded_array["arr_1"]
@@ -676,6 +710,21 @@ class SpectrumPlot:
                 #     )
                 # )
 
+                # assert setting.interval_start != setting.interval_end
+                # assert setting.zoom_start != setting.zoom_end
+
+                if setting.interval_start == setting.interval_end:
+                    print(
+                        "setting.interval_start == setting.interval_end! Returning!",
+                        flush=True,
+                    )
+                    return
+                if setting.zoom_start == setting.zoom_end:
+                    print(
+                        "setting.zoom_start == setting.zoom_end! Returning!", flush=True
+                    )
+                    return
+
                 extracted_data = (
                     spectrometer_data[
                         setting.interval_start : setting.interval_end,
@@ -775,7 +824,8 @@ class SpectrumPlot:
                     SpectrumPlot.data_to_plot(graphSettings)
         titles = [
             (
-                f"{tle_set.code_name.split('.')[0]}"  # die Millisekunden entfernen, für kürzere Namen
+                # die Millisekunden entfernen, für kürzere Namen
+                f"{os.path.basename(tle_set.measurement_path).split('.')[0]}"
                 + (
                     f"_g{tle_set.grad_start}_g{tle_set.grad_end}"
                     if setting.grad_end > 1
@@ -792,11 +842,12 @@ class SpectrumPlot:
                     if setting.zoomed
                     else ""
                 )
-                # + ("_sw" if setting.single_wav else "")  # single wav (wird aber durch den Interval schon angegeben)
-                + (
-                    "_in" if tle_set.normalize_integrationtime else ""
-                )  # integration normalized
-                + ("_pn" if tle_set.normalize_power else "")  # power normalized
+                # # single wav (wird aber durch den Interval schon angegeben)
+                # + ("_sw" if setting.single_wav else "")
+                # integration normalized
+                + ("_in" if tle_set.normalize_integrationtime else "")
+                # power normalized
+                + ("_pn" if tle_set.normalize_power else "")
                 + ("_ip" if tle_set.interpolate else "")
             )
             for tle_set in plotting_settings
@@ -826,37 +877,48 @@ class SpectrumPlot:
                     continue
             # plt.ion()
 
-        root_plot_dir = "plots/" + (
-            "single/" if len(plotting_settings) == 1 else "multi/"
-        )
         # print("figures: " + str(plt.get_fignums()))
 
         figures = [fig]
-        paths = [root_plot_dir + "neutral/"]
         suffixes = [""]
 
         if not multiple_plots and not setting.single_wav:
             figures.append(fig_colorful)
-            paths.append(root_plot_dir + "colorful/")
             suffixes.append("_colorful")
 
         if fig3d is not None and ax3d is not None:
             figures.append(fig3d)
-            paths.append(root_plot_dir + "3d/")
             suffixes.append("_3d")
 
-        for fig, path, suffix in zip(figures, paths, suffixes):
+        for fig, suffix in zip(figures, suffixes):
+
+            fig_save_path = os.path.join(
+                common_root,
+                title + suffix,
+            )
             fig.savefig(
-                os.path.join(setting.file_path, title + suffix + ".png"),
+                fig_save_path + ".png",
                 dpi=600,
             )
+            # damit es einfacher ist, die einzelnen Messungen zu finden, wenn der Plot in einem höheren Common Dir landet.
+            if multiple_plots:
+                with open(fig_save_path + ".json", "w", encoding="utf-8") as f:
+                    json.dump(
+                        [
+                            setting.measurement_path.replace("npz", "json")
+                            for setting in plotting_settings
+                        ],
+                        f,
+                        indent=4,
+                    )
 
+            continue
             os.makedirs(path, 0o777, exist_ok=True)
 
             # relpath, da docker und host unterschiedliche roots haben
             rel_path = (
                 os.path.relpath(
-                    os.path.abspath(setting.file_path), os.path.abspath(path)
+                    os.path.abspath(setting.save_dir), os.path.abspath(path)
                 )
                 + "/"
             )

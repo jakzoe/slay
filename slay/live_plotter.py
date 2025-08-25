@@ -32,7 +32,7 @@ class LivePlotter:
 
     def update_plot(self, frame, messdata):
         """Plottet die aktuell gemessene Messung."""
-        if messdata.stop_event.is_set() and hasattr(self, "live_ani"):
+        if messdata.stop_event.is_set():  #  and hasattr(self, "live_ani")
             # try:
 
             # if (
@@ -47,6 +47,7 @@ class LivePlotter:
             # return
             # schmeißt zwar exception, aber kann nichtt anders stoppen scheinbar
             plt.close(self.live_fig)
+            return
             # except AttributeError as e:
             #     print("Error stopping animation:", e, flush=True)
             # return
