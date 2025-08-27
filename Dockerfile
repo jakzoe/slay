@@ -49,6 +49,11 @@ ENV PYTHONPATH="/usr/local/bin/stellarnet"
 # WORKDIR $INSTALL_PATH/slay/
 WORKDIR $INSTALL_PATH
 
+# alternative: add "-v /etc/localtime:/etc/localtime:ro" to the run command
+RUN apt-get -y install tzdata
+ENV TZ=Europe/Berlin
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 FROM base AS debug
 
 RUN /usr/local/bin/pip3 install debugpy
