@@ -60,7 +60,11 @@ RUN /usr/local/bin/pip3 install debugpy
 RUN /usr/local/bin/pip3 install pip-licenses
 
 # pip-licenses --python=/usr/local/bin/python3;
-ENTRYPOINT ["/bin/sh", "-c", "/usr/local/bin/python3 -m debugpy --listen 0.0.0.0:5678 --wait-for-client examples/run_measurement.py"]
+# ENTRYPOINT ["/bin/sh", "-c", "/usr/local/bin/python3 -m debugpy --listen 0.0.0.0:5678 --wait-for-client examples/run_measurement.py"]
+
+COPY debug_entrypoint.sh /debug_entrypoint.sh
+
+ENTRYPOINT ["sh", "/debug_entrypoint.sh"]
 
 
 FROM base AS release
