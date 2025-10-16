@@ -447,6 +447,194 @@ class SpectrumPlot:
             return False
 
     @staticmethod
+    def measurement_from_disk(
+        measurement_path: str, measurement_settings: MeasurementSettings
+    ):
+
+        loaded_array = np.load(measurement_path)
+        spectrometer_data_gradient = loaded_array["arr_0"]
+        # die Wellenlängen des Spektrometers
+        x_data = loaded_array["arr_1"]
+        time_stamps_gradient = loaded_array["arr_2"]
+        del loaded_array
+
+        # alte Messungen haben noch keine Gradiant-Messung, dort ist num_gradiants immer default 1
+        if len(spectrometer_data_gradient.shape) < 3:
+            spectrometer_data_gradient = np.array((spectrometer_data_gradient,))
+
+        if len(time_stamps_gradient.shape) < 2:
+            time_stamps_gradient = np.array((time_stamps_gradient,))
+
+        assert (
+            measurement_settings.laser.num_gradiants
+            == len(spectrometer_data_gradient)
+            == len(time_stamps_gradient)
+        )
+
+        return spectrometer_data_gradient, x_data, time_stamps_gradient
+
+    @staticmethod
+    def save_plots(
+        fig,
+        fig_save_path: str,
+        plotting_settings: list[PlotSettings] = None,
+        close_fig=True,
+    ):
+
+        fig.savefig(
+            fig_save_path + ".png",
+            dpi=600,
+        )
+        # damit es einfacher ist, die einzelnen Messungen zu finden, wenn der Plot in einem höheren Common Dir landet.
+        if plotting_settings and len(plotting_settings) != 1:
+            with open(fig_save_path + ".json", "w", encoding="utf-8") as f:
+                json.dump(
+                    [
+                        setting.measurement_path.replace("npz", "json")
+                        for setting in plotting_settings
+                    ],
+                    f,
+                    indent=4,
+                )
+
+        if close_fig:
+            plt.close(fig)
+        return
+        os.makedirs(path, 0o777, exist_ok=True)
+
+        # relpath, da docker und host unterschiedliche roots haben
+        rel_path = (
+            os.path.relpath(os.path.abspath(setting.save_dir), os.path.abspath(path))
+            + "/"
+        )
+        cwd = os.getcwd()
+        os.chdir(os.path.abspath(path))
+        try:
+            src = rel_path + title + suffix + ".png"
+            dest = title + suffix + ".png"
+            if os.path.islink(dest):
+                os.remove(dest)
+            os.symlink(src, dest)
+        except FileExistsError as e:
+            print("could not create symlink")
+            print(e.strerror)
+
+        os.chdir(cwd)
+
+    @staticmethod
+    def plot_heatmap(
+        measurement_path: str,
+        measurement_settings: MeasurementSettings,
+        heatmap_plot_index: int,
+    ):
+
+        spectrometer_data_gradient, x_data, time_stamps_gradient = (
+            SpectrumPlot.measurement_from_disk(measurement_path, measurement_settings)
+        )
+
+        fig_heat, ax_heat = plt.subplots()
+        # bisher nur den ersten Gradient plotten, nicht mehr
+        heat_map = ax_heat.pcolormesh(
+            x_data,
+            time_stamps_gradient[heatmap_plot_index]
+            - time_stamps_gradient[heatmap_plot_index][0],
+            spectrometer_data_gradient[heatmap_plot_index],
+            # schwarzer Hintergrund gibt besseren Kontrast
+            cmap="inferno",
+        )
+        fig_heat.colorbar(heat_map, label="Intensität (Counts)")
+        ax_heat.set_xlabel("Wellenlänge (nm)")
+        ax_heat.set_ylabel("Zeit (s)")
+
+        save_path = os.path.dirname(measurement_path)
+        # Millisekunden aus dem Namen entfernen
+        title = os.path.basename(measurement_path).split(".")[0]
+        SpectrumPlot.save_plots(fig_heat, os.path.join(save_path, title + "_heatmap"))
+
+    @staticmethod
+    def plot_3d_gradient(
+        measurement_path: str,
+        measurement_settings: MeasurementSettings,
+        grad_start: int = 0,
+        grad_end: int = -1,
+    ):
+
+        spectrometer_data_gradient, x_data, _ = SpectrumPlot.measurement_from_disk(
+            measurement_path, measurement_settings
+        )
+
+        if grad_end < 0:
+            grad_end += len(spectrometer_data_gradient)
+
+        assert grad_end - grad_start > 1
+
+        fig3d, ax3d = plt.subplots(subplot_kw={"projection": "3d"})
+        # TODO: die tatsächlichen Werte statt der Indizes nutzen
+        Y = np.array(list(range(grad_end)))[grad_start:grad_end]
+        X = x_data
+        X, Y = np.meshgrid(X, Y)
+        Z = np.mean(
+            spectrometer_data_gradient[grad_start:grad_end],
+            axis=1,
+            dtype=float,
+        )
+        ax3d.plot_surface(
+            X,
+            Y,
+            Z,
+            cmap=plt.get_cmap("coolwarm"),
+            linewidth=0,
+            antialiased=False,
+            edgecolor="none",
+            rstride=1,  # alle Datenpunkte anzeigen
+            cstride=2,  # jeden zweiten Datenpunkt anzeigen (mit jedem Datenpunkt plottet es nicht)
+        )
+        ax3d.set_xlabel("Wellenlänge (nm)")
+        ax3d.set_ylabel("Gradient-Index")
+        ax3d.set_zlabel("Intensität (Counts)")
+        # ax3d.secondary_yaxis(location=0).set_yticks(
+        #     [1, 3, 7], labels=["\nOughts", "\nTeens", "\nTwenties"]
+        # )
+
+        # import plotly.graph_objects as go
+
+        # fig3d = go.Figure(data=[go.Surface(z=Z, x=X, y=Y)])
+        # fig3d.update_layout(
+        #     title=dict(text="Mt Bruno Elevation"),
+        #     autosize=False,
+        #     width=500,
+        #     height=500,
+        #     margin=dict(l=65, r=50, b=65, t=90),
+        # )
+
+        # # # mit Contours
+        # # fig3d = go.Figure(data=[go.Surface(z=Z)])
+        # # fig3d.update_traces(
+        # #     contours_z=dict(
+        # #         show=True,
+        # #         usecolormap=True,
+        # #         highlightcolor="limegreen",
+        # #         project_z=True,
+        # #     )
+        # # )
+        # # fig3d.update_layout(
+        # #     title=dict(text="Mt Bruno Elevation"),
+        # #     autosize=False,
+        # #     scene_camera_eye=dict(x=1.87, y=0.88, z=-0.64),
+        # #     width=500,
+        # #     height=500,
+        # #     margin=dict(l=65, r=50, b=65, t=90),
+        # # )
+
+        # # fig.show()
+        # fig3d.write_image("fig1.png")
+
+        save_path = os.path.dirname(measurement_path)
+        # Millisekunden aus dem Namen entfernen
+        title = os.path.basename(measurement_path).split(".")[0]
+        SpectrumPlot.save_plots(fig3d, os.path.join(save_path, title + "_3d"))
+
+    @staticmethod
     def plot_results(
         plotting_settings: list[PlotSettings],
         measurement_settings: MeasurementSettings,
@@ -459,7 +647,7 @@ class SpectrumPlot:
         """Erstellt einen Plot mit den in den Plotting-Settings definierten Graphen."""
 
         plt.ioff()
-        # dirty, aber: Irgendwo wird eine figure ohne Inhalt erstellt und nicht geschlossen?? Die dann unten gezeigt werden würde.
+        # alte z. B. nur gespeicherte figs, die ansonsten eventuell bei .show() als nur weiße Plots gezeigt werden würden
         plt.close("all")
         # measurements, wav, curr_measurement_index = messdata.get_data()
 
@@ -515,24 +703,10 @@ class SpectrumPlot:
             #     if f.endswith(".npz")
             # ]
 
-            loaded_array = np.load(orig_setting.measurement_path)
-            spectrometer_data_gradient = loaded_array["arr_0"]
-            # die Wellenlängen des Spektrometers
-            x_data = loaded_array["arr_1"]
-            time_stamps_gradient = loaded_array["arr_2"]
-            del loaded_array
-
-            # alte Messungen haben noch keine Gradiant-Messung, dort ist num_gradiants immer default 1
-            if len(spectrometer_data_gradient.shape) < 3:
-                spectrometer_data_gradient = np.array((spectrometer_data_gradient,))
-
-            if len(time_stamps_gradient.shape) < 2:
-                time_stamps_gradient = np.array((time_stamps_gradient,))
-
-            assert (
-                measurement_settings.laser.num_gradiants
-                == len(spectrometer_data_gradient)
-                == len(time_stamps_gradient)
+            spectrometer_data_gradient, x_data, time_stamps_gradient = (
+                SpectrumPlot.measurement_from_disk(
+                    orig_setting.measurement_path, measurement_settings
+                )
             )
 
             if orig_setting.grad_end == orig_setting.default_max:
@@ -541,75 +715,6 @@ class SpectrumPlot:
                 raise ValueError(
                     "The specified number of gradients exceeds the number of gradients in the measurement."
                 )
-
-            if orig_setting.grad_end - orig_setting.grad_start > 1:
-                fig3d, ax3d = plt.subplots(subplot_kw={"projection": "3d"})
-                # TODO: die Werte nutzen
-                Y = np.array(list(range(orig_setting.grad_end)))[
-                    orig_setting.grad_start : orig_setting.grad_end
-                ]
-                X = x_data
-                X, Y = np.meshgrid(X, Y)
-                Z = np.mean(
-                    spectrometer_data_gradient[
-                        orig_setting.grad_start : orig_setting.grad_end
-                    ],
-                    axis=1,
-                    dtype=float,
-                )
-                ax3d.plot_surface(
-                    X,
-                    Y,
-                    Z,
-                    cmap=plt.get_cmap("coolwarm"),
-                    linewidth=0,
-                    antialiased=False,
-                    edgecolor="none",
-                    rstride=1,  # alle Datenpunkte anzeigen
-                    cstride=2,  # jeden zweiten Datenpunkt anzeigen (mit jedem Datenpunkt plottet es nicht)
-                )
-                ax3d.set_xlabel("Wellenlänge (nm)")
-                ax3d.set_ylabel("Gradient-Index")
-                ax3d.set_zlabel("Intensität (Counts)")
-                # ax3d.secondary_yaxis(location=0).set_yticks(
-                #     [1, 3, 7], labels=["\nOughts", "\nTeens", "\nTwenties"]
-                # )
-
-                # import plotly.graph_objects as go
-
-                # fig3d = go.Figure(data=[go.Surface(z=Z, x=X, y=Y)])
-                # fig3d.update_layout(
-                #     title=dict(text="Mt Bruno Elevation"),
-                #     autosize=False,
-                #     width=500,
-                #     height=500,
-                #     margin=dict(l=65, r=50, b=65, t=90),
-                # )
-
-                # # # mit Contours
-                # # fig3d = go.Figure(data=[go.Surface(z=Z)])
-                # # fig3d.update_traces(
-                # #     contours_z=dict(
-                # #         show=True,
-                # #         usecolormap=True,
-                # #         highlightcolor="limegreen",
-                # #         project_z=True,
-                # #     )
-                # # )
-                # # fig3d.update_layout(
-                # #     title=dict(text="Mt Bruno Elevation"),
-                # #     autosize=False,
-                # #     scene_camera_eye=dict(x=1.87, y=0.88, z=-0.64),
-                # #     width=500,
-                # #     height=500,
-                # #     margin=dict(l=65, r=50, b=65, t=90),
-                # # )
-
-                # # fig.show()
-                # fig3d.write_image("fig1.png")
-
-            else:
-                fig3d, ax3d = (None, None)
 
             for grad_index in range(orig_setting.grad_start, orig_setting.grad_end):
 
@@ -886,52 +991,12 @@ class SpectrumPlot:
             figures.append(fig_colorful)
             suffixes.append("_colorful")
 
-        if fig3d is not None and ax3d is not None:
-            figures.append(fig3d)
-            suffixes.append("_3d")
-
         for fig, suffix in zip(figures, suffixes):
-
-            fig_save_path = os.path.join(
-                common_root,
-                title + suffix,
+            SpectrumPlot.save_plots(
+                fig,
+                os.path.join(
+                    common_root,
+                    title + suffix,
+                ),
+                plotting_settings,
             )
-            fig.savefig(
-                fig_save_path + ".png",
-                dpi=600,
-            )
-            # damit es einfacher ist, die einzelnen Messungen zu finden, wenn der Plot in einem höheren Common Dir landet.
-            if multiple_plots:
-                with open(fig_save_path + ".json", "w", encoding="utf-8") as f:
-                    json.dump(
-                        [
-                            setting.measurement_path.replace("npz", "json")
-                            for setting in plotting_settings
-                        ],
-                        f,
-                        indent=4,
-                    )
-
-            continue
-            os.makedirs(path, 0o777, exist_ok=True)
-
-            # relpath, da docker und host unterschiedliche roots haben
-            rel_path = (
-                os.path.relpath(
-                    os.path.abspath(setting.save_dir), os.path.abspath(path)
-                )
-                + "/"
-            )
-            cwd = os.getcwd()
-            os.chdir(os.path.abspath(path))
-            try:
-                src = rel_path + title + suffix + ".png"
-                dest = title + suffix + ".png"
-                if os.path.islink(dest):
-                    os.remove(dest)
-                os.symlink(src, dest)
-            except FileExistsError as e:
-                print("could not create symlink")
-                print(e.strerror)
-
-            os.chdir(cwd)

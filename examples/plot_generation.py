@@ -67,6 +67,8 @@ def make_plots(path, name):
     measurement_path_json = os.path.join(path, name + ".json")
     m_settings = MeasurementSettings.from_json(measurement_path_json)
 
+    SpectrumPlot.plot_heatmap(measurement_path, m_settings, 0)
+
     # Generellen Durchschnitt plotten
     if plot_general:
         p_settings.append([PlotSettings(measurement_path, smooth=True)])
