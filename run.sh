@@ -1,24 +1,62 @@
 #!/bin/bash
 
+get_tty_path() {
+
+  local VENDOR_ID="$1"
+  local PRODUCT_ID="$2"
+
+  DEVICE_PATH=$(for device in /dev/ttyUSB*; do
+    if udevadm info -a -n "$device" | grep -q "ATTRS{idVendor}==\"$VENDOR_ID\"" && udevadm info -a -n "$device" | grep -q "ATTRS{idProduct}==\"$PRODUCT_ID\""; then
+      echo "$device"
+    fi
+  done)
+
+  if [ -n "$DEVICE_PATH" ]; then
+    echo "$DEVICE_PATH"
+  else
+    echo ""
+  fi
+
+}
+
 run_docker_with_device() {
   local input="$1"
   local bus=$(echo "$input" | awk '{print $2}' | sed 's/://')
   local device=$(echo "$input" | awk '{print $4}' | sed 's/://')
   local spec_path="/dev/bus/usb/$bus/$device"
+  arduino_path=$(get_tty_path "1a86" "7523")
+  laser_path=$(get_tty_path "10c4" "ea60")
+
+  if [ -n "$spec_path" ]; then
+    spec_device="--device=$spec_path"
+  else
+    spec_device=""
+  fi
+
+  if [ -n "$arduino_path" ]; then
+    arduino_device="--device=$arduino_path"
+  else
+    arduino_device=""
+  fi
+
+  if [ -n "$laser_path" ]; then
+    laser_device="--device=$laser_path"
+  else
+    laser_device=""
+  fi
 
   if [[ ! -c "$spec_path" ]]; then
     # echo "character device file does not exist"
     return 1
   fi
 
-  docker run -v /home/user/slay/myproject:/root/slay \
+  docker run -v /home/user/slay/myproject/slay:/root/slay \
     -e "DISPLAY=$DISPLAY" \
     --mount type=bind,src=/tmp/.X11-unix,dst=/tmp/.X11-unix \
     --device=/dev/dri:/dev/dri \
-    --device="$spec_path" \
-    laserdocker
+    "$spec_device" "$arduino_device" "$laser_device" \
+    laserdocker "$arduino_path" "$laser_path"
 
- #--device="/dev/ttyUSB0" \
   return $?
 }
 

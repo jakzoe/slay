@@ -50,7 +50,12 @@ def getSpectrum_Y(arg, *args, **kwargs):
     mu = 0
     sigma = 1
     x = np.linspace(-5, 5, 2048)
-    return (1 / (2 * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mu) / sigma) ** 2) * 100
+    return (
+        (1 / (2 * np.sqrt(2 * np.pi)))
+        * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
+        * 100
+        * 2000
+    )
 
 
 # sn.reset(spectrometer)

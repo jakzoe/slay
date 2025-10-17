@@ -7,6 +7,8 @@ FROM debian:latest
 RUN apt -y update && apt -y upgrade
 RUN apt -y install libssl-dev openssl wget build-essential zlib1g-dev libffi-dev libcairo2-dev libgirepository1.0-dev libusb-1.0-0-dev usbutils udev
 RUN apt -y install mesa-utils libgtk-3-dev
+# needed for building for ipython
+RUN apt-get -y install libsqlite3-dev
 
 WORKDIR /usr/src
 RUN wget https://www.python.org/ftp/python/3.10.9/Python-3.10.9.tgz
@@ -32,13 +34,17 @@ RUN /usr/local/bin/pip3 install pyusb pyserial numpy matplotlib PyGObject Scienc
 # SciencePlots is able to use LaTeX (can be disabled using 'no-latex')
 RUN apt-get -y install dvipng texlive-latex-extra texlive-fonts-recommended cm-super
 
-COPY stellarnet/stellarnet_driverLibs/ /usr/local/bin/stellarnet/driverLibs
-ENV PYTHONPATH="/usr/local/bin/stellarnet"
+RUN /usr/local/bin/pip3 install ipython
 
-WORKDIR $INSTALL_PATH/slay/
+COPY bin/stellarnet_driverLibs/ /usr/local/bin/stellarnet/driverLibs
+ENV PYTHONPATH="/usr/local/bin/stellarnet"
+#ENV IN_DOCKER=True
+
+# WORKDIR $INSTALL_PATH/slay/
+WORKDIR $INSTALL_PATH
 # exec form
 #ENTRYPOINT ["/usr/local/bin/python3", "nkt.py"]
-ENTRYPOINT ["/usr/local/bin/python3", "laser_messungen.py"]
+ENTRYPOINT ["/usr/local/bin/python3", "slay/laser_messungen.py"]
 
 # # shell form
 # SHELL ["/bin/bash", "-c"]

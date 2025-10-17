@@ -1,3 +1,6 @@
+from MeasurementSettings import MeasurementSettings
+from PlottingSettings import PlottingSettings
+
 import numpy as np
 from matplotlib.ticker import MultipleLocator
 
@@ -17,20 +20,53 @@ plt.style.use(["science"])
 USE_GRID = False
 
 import os
-import threading
 import subprocess
+from multiprocessing import Process
 import warnings
 
 import matplotlib.animation as animation
 import sys
 import time
+from scipy.signal import savgol_filter
+import threading
 
-# use a dic or something similar instead...
-from laser_constants import *
-from PlottingSettings import PlottingSettings
+from math import ceil, floor
 
 
 class Laserplot:
+
+    class GraphSettings:
+
+        def __init__(
+            self,
+            fig,
+            ax,
+            x_data,
+            y_data,
+            label,
+            smooth,
+            color,
+            style,
+            std=None,
+            rainbow=False,
+            scatter=True,
+            marker_size=4,
+            time_plot=False,
+        ):
+            self.fig = fig
+            self.ax = ax
+            self.x_data = x_data
+            self.y_data = y_data
+            self.label = label
+            self.smooth = smooth
+            self.color = color
+            self.style = style
+            self.std = std
+            self.rainbow = rainbow
+            self.scatter = scatter
+            self.marker_size = marker_size
+            self.time_plot = time_plot
+
     def __init__(self):
         self.clim = (350, 780)
         norm = plt.Normalize(*self.clim)
@@ -41,11 +77,11 @@ class Laserplot:
         )
 
         self.live_fig, self.live_ax = plt.subplots()
-        plt.xlabel("Wellenlänge (nm)")
-        plt.ylabel("Intensität (Counts)")
-        # plt.grid(True)
+        self.live_ax.set_xlabel("Wellenlänge (nm)")
+        self.live_ax.set_ylabel("Intensität (Counts)")
+        # self.live_ax.grid(True)
         if USE_GRID:
-            plt.grid(visible=True, which="both", linestyle="--", linewidth=0.5)
+            self.live_ax.grid(visible=True, which="both", linestyle="--", linewidth=0.5)
         # weniger Weiß an den Rändern
 
         self.scatter = self.live_ax.scatter(
@@ -56,6 +92,7 @@ class Laserplot:
 
         plt.ion()
         plt.show()
+        self.stop_event = threading.Event()
 
     def wavelength_to_rgb(self, wavelength, gamma=0.8):
         """taken from http://www.noah.org/wiki/Wavelength_to_RGB_in_Python
@@ -70,271 +107,513 @@ class Laserplot:
         """
         wavelength = float(wavelength)
         if wavelength >= 380 and wavelength <= 750:
-            A = 1.0
+            a = 1.0
         else:
-            A = 0.5
+            a = 0.5
         if wavelength < 380:
             wavelength = 380.0
         if wavelength > 750:
             wavelength = 750.0
         if wavelength >= 380 and wavelength <= 440:
             attenuation = 0.3 + 0.7 * (wavelength - 380) / (440 - 380)
-            R = ((-(wavelength - 440) / (440 - 380)) * attenuation) ** gamma
-            G = 0.0
-            B = (1.0 * attenuation) ** gamma
+            r = ((-(wavelength - 440) / (440 - 380)) * attenuation) ** gamma
+            g = 0.0
+            b = (1.0 * attenuation) ** gamma
         elif wavelength >= 440 and wavelength <= 490:
-            R = 0.0
-            G = ((wavelength - 440) / (490 - 440)) ** gamma
-            B = 1.0
+            r = 0.0
+            g = ((wavelength - 440) / (490 - 440)) ** gamma
+            b = 1.0
         elif wavelength >= 490 and wavelength <= 510:
-            R = 0.0
-            G = 1.0
-            B = (-(wavelength - 510) / (510 - 490)) ** gamma
+            r = 0.0
+            g = 1.0
+            b = (-(wavelength - 510) / (510 - 490)) ** gamma
         elif wavelength >= 510 and wavelength <= 580:
-            R = ((wavelength - 510) / (580 - 510)) ** gamma
-            G = 1.0
-            B = 0.0
+            r = ((wavelength - 510) / (580 - 510)) ** gamma
+            g = 1.0
+            b = 0.0
         elif wavelength >= 580 and wavelength <= 645:
-            R = 1.0
-            G = (-(wavelength - 645) / (645 - 580)) ** gamma
-            B = 0.0
+            r = 1.0
+            g = (-(wavelength - 645) / (645 - 580)) ** gamma
+            b = 0.0
         elif wavelength >= 645 and wavelength <= 750:
             attenuation = 0.3 + 0.7 * (750 - wavelength) / (750 - 645)
-            R = (1.0 * attenuation) ** gamma
-            G = 0.0
-            B = 0.0
+            r = (1.0 * attenuation) ** gamma
+            g = 0.0
+            b = 0.0
         else:
-            R = 0.0
-            G = 0.0
-            B = 0.0
-        return (R, G, B, A)
+            r = 0.0
+            g = 0.0
+            b = 0.0
+        return (r, g, b, a)
+
+    def data_to_plot(
+        self,
+        settings: GraphSettings,
+    ):
+
+        def smooth_curve(array):
+            return savgol_filter(array, window_length=50, polyorder=5)
+
+        line_data = (
+            smooth_curve(settings.y_data)
+            if not settings.time_plot and settings.smooth
+            else settings.y_data
+        )
+
+        if settings.rainbow and not settings.time_plot:
+            X, _ = np.meshgrid(settings.x_data, line_data)
+
+            extent = (
+                np.min(settings.x_data),
+                np.max(settings.x_data),
+                np.min(line_data),
+                np.max(line_data),
+            )
+
+            settings.ax.imshow(
+                X, clim=self.clim, extent=extent, cmap=self.spectralmap, aspect="auto"
+            )
+            settings.ax.fill_between(
+                settings.x_data,
+                line_data,
+                np.max(line_data) + settings.marker_size,
+                color="w",
+            )
+
+        if settings.std is not None and not settings.time_plot:
+
+            std = smooth_curve(settings.std) if settings.smooth else settings.std
+            assert len(settings.x_data) == len(line_data) == len(std)
+            settings.ax.fill_between(
+                settings.x_data,
+                settings.y_data - std,
+                settings.y_data + std,
+                alpha=0.2,
+                edgecolor="#CC4F1B",
+                facecolor="#FF9848",
+                label=None if settings.label is None else "Standardabweichung",
+            )
+            # ax.plot(
+            #     wav,
+            #     line_data - std,
+            #     color="red",
+            #     alpha=0.2,
+            #     label=None if label is None else "Standardabweichung",
+            # )
+            # ax.plot(
+            #     wav,
+            #     line_data + std,
+            #     color="red",
+            #     alpha=0.2,
+            # )
+        # das Label wieder hinzufügen, nachdem .clear es gelöscht hat
+        # self.scatter =
+        if settings.smooth and settings.scatter:
+            settings.ax.scatter(
+                settings.x_data,
+                settings.y_data,
+                label=settings.label,
+                s=settings.marker_size,
+                color="gray" if not settings.time_plot else "blue",
+                alpha=0.4 if not settings.time_plot else 1,
+            )
+        #     ax.plot(
+        #         wav, line_data, label=None if label is None else "smooth"
+        #     )  #  color=colors[iterator],
+
+        # else:
+        #     ax.scatter(
+        #         wav,
+        #         measurement,
+        #         label=None if label is None else label,
+        #         s=marker_size,
+        #     )  #  color=colors[iterator],
+
+        if not settings.time_plot:
+            settings.ax.plot(
+                settings.x_data,
+                line_data,
+                label=settings.label,
+                color=settings.color,
+                linestyle=settings.style,
+                # alpha=0.1,
+            )
+
+        # die Daten im Scatter-Plot aktualisieren
+        # self.scatter.set_offsets(np.column_stack((wav, measurement)))
+        # self.scatter.set_label(label)
+
+        # funktioniert nicht
+        # live_ax.legend(["Mittelwert von x Messungen"])
+
+        # wurden zuvor von .clear gelösch
+        settings.ax.set_xlabel(
+            "Wellenlänge (nm)" if not settings.time_plot else "Zeit (s)"
+        )
+        settings.ax.set_ylabel("Intensität (Counts)")
+
+        # den Wertebereich der Axen anpassen (mit Puffer)
+        if not settings.time_plot:
+            settings.ax.set_xlim(settings.x_data[0] - 10, settings.x_data[-1] + 10)
+        # so machen, dass immer noch das Label oben hinpasst
+        settings.ax.set_ylim(
+            max(0, min(line_data), settings.ax.get_ylim()[0]),
+            max(max(line_data), 2000, settings.ax.get_ylim()[1]),
+        )  # * 1.05
+        # ax.set_ylim(1500, max(measurement))
+        # ax.set_xlim(350, 600)
+
+        # Achsenbeschriftung alle 100 nm
+        if not settings.time_plot:
+            settings.ax.xaxis.set_major_locator(MultipleLocator(100))
+        settings.ax.tick_params(axis="both", labelsize=8)
+
+        # weniger Weiß an den Rändern
+        # fig.tight_layout()
+
+        if settings.label is not None:
+            if USE_GRID:
+
+                settings.ax.legend(
+                    # loc="upper center",
+                    # bbox_to_anchor=(0.5, -0.05),
+                    frameon=True,
+                    fancybox=True,
+                    shadow=True,
+                    markerscale=4,
+                )
+            else:
+                settings.ax.legend(
+                    # loc="upper center",
+                    # bbox_to_anchor=(0.5, -0.05),
+                    frameon=True,
+                    fancybox=True,
+                    # shadow=True,
+                    markerscale=4,
+                )
 
     def plot_results(
         self,
         plotting_settings: list[PlottingSettings],
-        measurement_settings,
-        measurements,
-        wav,
-        verbose=True,
+        measurement_settings: MeasurementSettings,
+        colors=None,
+        show_plots=True,
+        # messdata: Messdata,
+        # verbose=True,
     ):
-        """Erstellt den Plot anhand der gemessenen Daten."""
+        """Erstellt einen Plot mit den in den Plotting-Settings definierten Graphen."""
 
-        # [:]: nutze eine Kopie von plotting_settings zum Iterieren
-        for setting in plotting_settings[:]:
-            file_list = [
-                os.path.join(setting.file_path, f)
-                for f in os.listdir(setting.file_path)
-                if f.endswith(".npz")
-            ]
-            if not file_list:
-                print(f"the dir {setting.file_path} ist empty!")
-                plotting_settings.remove(setting)
+        plt.ioff()
+        # diry, aber: Irgendwo wird eine figure ohne Inhalt erstellt und nicht geschlossen?? Die dann unten gezeigt werden würde.
+        plt.close("all")
+        # measurements, wav, curr_measurement_index = messdata.get_data()
 
-        iterator = 0
+        # # [:]: nutze eine Kopie von plotting_settings zum Iterieren
+        # for setting in plotting_settings[:]:
+        #     # if not os.path.exists(setting.file_path):
+        #     #     print(f"The directory {setting.file_path} does not exist!")
+        #     #     plotting_settings.remove(setting)
+        #     #     continue
+
+        #     file_list = [
+        #         os.path.join(setting.file_path, f)
+        #         for f in os.listdir(setting.file_path)
+        #         if f.endswith(".npz")
+        #     ]
+        #     if not file_list:
+        #         print(f"the dir {setting.file_path} ist empty!")
+        #         plotting_settings.remove(setting)
 
         fig, ax = plt.subplots()
+        fig_colorful, ax_colorful = plt.subplots()
 
         # plt.grid(True)
         if USE_GRID:
             plt.grid(visible=True, which="both", linestyle="--", linewidth=0.5)
-        # weniger Weiß an den Rändern
-        plt.tight_layout()
 
-        for setting in plotting_settings:
-
-            file_list = [
-                os.path.join(setting.file_path, f)
-                for f in os.listdir(setting.file_path)
-                if f.endswith(".npz")
-            ]
-
+        if colors is None:
             # colors = plt.cm.jet(np.linspace(0, 1, len(file_list) + 2))
-            colors = matplotlib.colormaps["jet"](np.linspace(0, 1, len(file_list) + 2))
+            colors = matplotlib.colormaps["jet"](
+                np.linspace(0, 1, len(plotting_settings) + 2)
+            )
 
-            # temp_data = np.load(file_list[0])["arr_0"][0]
-            # # print(temp_data.shape)
-            # # exit()
-            # temp_waves = []
-            # for val in temp_data:
-            #     temp_waves.append(val[0])
+        # ob mehrere Graphen geplottet werden
+        multiple_plots = len(plotting_settings) != 1
+        for i, setting in enumerate(plotting_settings):
 
-            # temp_waves = np.array(temp_waves)
+            # file_list = [
+            #     os.path.join(setting.file_path, f)
+            #     for f in os.listdir(setting.file_path)
+            #     if f.endswith(".npz")
+            # ]
 
-            wavelengths = np.load(file_list[0])["arr_1"]
+            file_name = os.path.join(setting.file_path, setting.code_name + ".npz")
 
-            if setting.zoom_end == sys.maxsize:
-                setting.zoom_end = 2048
+            loaded_array = np.load(file_name)
+            spectrometer_data = loaded_array["arr_0"]
+            x_data = loaded_array["arr_1"]
+            time_stamps = loaded_array["arr_2"] - loaded_array["arr_2"][0]
+
+            # falls es in Prozent angegeben wurde
+            if setting.interval_start_time < 1 and setting.interval_end_time <= 1:
+                setting.interval_start_time = (
+                    time_stamps[-1] * setting.interval_start_time
+                    if setting.interval_start_time != 0
+                    else 0
+                )
+                setting.interval_end_time = time_stamps[-1] * setting.interval_end_time
+
+            # Sekunden in Index umrechnen
+            setting.interval_start = (
+                0
+                if setting.interval_start_time == 0
+                else (np.abs(time_stamps - setting.interval_start_time)).argmin()
+            )
+
+            setting.interval_end = (
+                len(spectrometer_data)
+                if setting.interval_end_time == sys.maxsize
+                else (np.abs(time_stamps - setting.interval_end_time)).argmin()
+            )
+
+            single_wav = setting.zoom_start_wav + 1 == setting.zoom_end_wav
+            # von Wellenlänge in Index umrechnen
+            setting.zoom_start = (
+                0
+                if setting.zoom_start_wav == 0
+                else (np.abs(x_data - setting.zoom_start_wav)).argmin()
+            )
+            if single_wav:
+                setting.zoom_end = setting.zoom_start + 1
             else:
-                setting.zoom_end = (np.abs(wavelengths - setting.zoom_end)).argmin()
-
-            if setting.zoom_start != 0:
-                setting.zoom_start = (np.abs(wavelengths - setting.zoom_start)).argmin()
-
-            x_ax_len = setting.zoom_end - setting.zoom_start
-
-            result = np.zeros([x_ax_len], dtype=float)
-            standard_deviation_data = []
-            if verbose:
-                print("calculating average...")
-
-            for file in file_list:
-
-                if verbose:
-                    print("reading data from disk...")
-                loaded_array = np.load(file)
-                spectrometer_data = loaded_array["arr_0"]
-                metadata = loaded_array["arr_2"]
-
-                assert measurement_settings["REPETITIONS"] == len(spectrometer_data)
-
-                normalize_integrationtime_factor = 1
-                normalize_power = 1
-
-                if setting.normalize_integrationtime:
-                    normalize_integrationtime_factor = measurement_settings["INTTIME"]
-                if setting.normalize_power:
-                    normalize_integrationtime_factor = measurement_settings["INTENSITY"]
-
-                mean = np.zeros([x_ax_len], dtype=float)
-
-                for i in range(len(spectrometer_data)):
-                    j = i + setting.interval_start
-                    if j >= setting.interval_end:
-                        break
-                    intensity = []
-                    for k in range(len(spectrometer_data[j])):
-                        l = k + setting.zoom_start
-                        if l >= setting.zoom_end:
-                            break
-                        intensity.append(
-                            spectrometer_data[j][l]
-                            / normalize_integrationtime_factor
-                            / normalize_power
-                        )
-                    standard_deviation_data.append(intensity)
-
-                    mean += spectrometer_data[j][setting.zoom_start : setting.zoom_end]
-
-                print(
-                    setting.interval_end - setting.interval_start
-                    if setting.sliced()
-                    else len(spectrometer_data)
+                setting.zoom_end = (
+                    len(x_data)
+                    if setting.zoom_end_wav == sys.maxsize
+                    else (np.abs(x_data - setting.zoom_end_wav)).argmin()
                 )
-                print(setting.sliced())
-                mean /= (
-                    setting.interval_end - setting.interval_start
-                    if setting.sliced()
-                    else len(spectrometer_data)
-                )
-                result += mean
 
-            result /= len(file_list)
-            standard_deviation = np.std(standard_deviation_data, axis=0)
+            # nur eine Wellenlänge über die Zeit plotten
+            if single_wav:
+                x_data = (loaded_array["arr_2"] - loaded_array["arr_2"][0])[
+                    setting.interval_start : setting.interval_end
+                ]  # Zeit von UNIX time in delta Time in Minuten umrechnen
+                print(f"Zeitlänge der Messung: {x_data[-1]}s")
+                x_ax_len = len(x_data)
+            else:
+                assert len(x_data) == 2048
+                x_ax_len = setting.zoom_end - setting.zoom_start
+                x_data = x_data[setting.zoom_start : setting.zoom_end]
 
-            # wave_min = min(wavelengths)
-            # wave_max = max(wavelengths)
-            # assert wave_min == wavelengths[0]
-            # assert wave_max == wavelengths[-1]
-            wave_min = wavelengths[0]
-            wave_max = wavelengths[-1]
-
-            intensity_min = min(result)
-            intensity_max = max(result)
-            std_max = max(standard_deviation)
-
-            if verbose:
-                print("creating backgroundimage...")
-            # wird resized, deshalb height=1
-            # ax.imshow(
-            #     make_spectrum_image(int(len(wavelengths)), 1, wavelengths),
-            #     extent=[
-            #         wave_min,
-            #         wave_max,
-            #         intensity_min - std_max,
-            #         intensity_max + std_max,
-            #     ],
-            #     aspect="auto",
-            #     alpha=0.4,
+            # setting.zoom_end = (
+            #     len(x_data)
+            #     if setting.zoom_end == sys.maxsize
+            #     else (np.abs(x_data - setting.zoom_end)).argmin()
             # )
 
-            if verbose:
-                print("creating plot...")
+            # if setting.zoom_start != 0:
+            #     setting.zoom_start = (np.abs(x_data - setting.zoom_start)).argmin()
 
-            rate = measurement_settings["REPETITIONS"]
-            if setting.sliced():
-                rate = setting.interval_end - setting.interval_start
+            assert measurement_settings.laser.REPETITIONS == len(spectrometer_data)
 
-            ax.scatter(
-                wavelengths,
-                result,
-                label=f"Mittelwert von {rate} Messungen",
-                color=colors[iterator],
-                s=1,
+            del time_stamps, loaded_array
+
+            normalize_integrationtime_factor = (
+                measurement_settings.specto.INTTIME
+                if setting.normalize_integrationtime
+                else 1
             )
-            assert len(result) == len(standard_deviation)
-
-            # X, _ = np.meshgrid(wav, measurement)
-
-            # extent = (np.min(wav), np.max(wav), np.min(measurement), np.max(measurement))
-            # ax.imshow(X, clim=clim, extent=extent, cmap=spectralmap, aspect="auto")
-            # ax.fill_between(wav, measurement, max(measurement), color="w")
-
-            ax.fill_between(
-                wavelengths,
-                result - standard_deviation,
-                result + standard_deviation,
-                alpha=0.5,
-                edgecolor="#CC4F1B",
-                facecolor="#FF9848",
-                label="Standardabweichung",
+            normalize_power = (
+                measurement_settings.laser.INTENSITY if setting.normalize_power else 1
             )
-            iterator += 1
 
-        fig.legend(
-            loc="upper center",
-            bbox_to_anchor=(0.5, -0.05),
-            fancybox=True,
-            shadow=True,
-            markerscale=4,
-        )  # ,ncols=3
+            # # aus den gesamten Daten den durch die Slices definierten Teil ausschneiden
+            # extracted_data = np.zeros(
+            #     (
+            #         setting.interval_end - setting.interval_start,
+            #         x_ax_len,
+            #     )
+            # )
 
-        plt.xlabel("Wellenlänge (nm)")
-        plt.ylabel("Intensität (Counts)")
+            extracted_data = (
+                spectrometer_data[
+                    setting.interval_start : setting.interval_end,
+                    setting.zoom_start : setting.zoom_end,
+                ]
+                / normalize_integrationtime_factor
+                / normalize_power
+            )
 
-        title = setting.file_path  # measurement_settings["NAME"]
+            # # jede Wiederholung der Messung
+            # for i in range(len(spectrometer_data)):
+            #     # nur Ausschnitt aus den Widerholungen der Messung (falls gewünscht)
+            #     j = i + setting.interval_start
+            #     if j >= setting.interval_end:
+            #         break
+            #     # die gesamten Daten von der Messung i sammeln und ggf. normalisieren
+            #     intensities = []
+            #     for k in range(len(spectrometer_data[j])):
+            #         l = k + setting.zoom_start
+            #         if l >= setting.zoom_end:
+            #             break
+            #         intensities.append(
+            #             spectrometer_data[j][l]
+            #             / normalize_integrationtime_factor
+            #             / normalize_power
+            #         )
+            #     extracted_data[j] = np.array(intensities)
+            del spectrometer_data
 
-        for setting in plotting_settings:
-            if setting.sliced():
-                title += (
-                    f" {setting.interval_start} bis {setting.interval_end} Laserschüsse"
+            if single_wav:
+                y_data = extracted_data
+                standard_deviation = None
+            else:
+                y_data = np.mean(extracted_data, axis=0, dtype=float)
+                # STD nicht plotten, wenn es mehrere Graphen sind (zu unübersichtlich)
+                standard_deviation = (
+                    np.std(extracted_data, axis=0, dtype=float)
+                    if not multiple_plots
+                    else None
                 )
-            if setting.normalize_integrationtime:
-                title += " Integrationszeit normalisiert"
-            if setting.normalize_power:
-                title += " Power normalisiert"
+                if standard_deviation is not None:
+                    assert len(y_data) == len(standard_deviation)
+            assert len(y_data) == x_ax_len
 
-            if setting.zoom():
-                title += " Ausschnitt"
-            # nur vom ersten hinzufügen, ansonsten wird der Titel zu lang
-            break
+            # nimmt zu viel Platz ein: Einfach dazu schreiben
+            # label = f"Mittelwert von {rate} Messungen"
 
-        plt.title(title)
-        title += ".png"
+            color = colors[i] if setting.color is None else setting.color
 
-        plt.draw()
+            print(f"max: {np.max(y_data)} at {x_data[np.argmax(y_data)]}")
 
-        try:
-            os.makedirs("Plots/", 0o777)
-        except OSError as error:
-            print(error)
-            print("(directory is already existent)")
+            def round_left(x):
+                return (
+                    floor(x)
+                    if round(setting.interval_start_time)
+                    == round(setting.interval_end_time)
+                    else round(x)
+                )
 
-        fig.savefig(
-            "Plots/" + title.replace("%", "Prozent"), dpi=300, bbox_inches="tight"
+            def round_right(x):
+                return (
+                    ceil(x)
+                    if round(setting.interval_start_time)
+                    == round(setting.interval_end_time)
+                    else round(x)
+                )
+
+            graphSettings = self.GraphSettings(
+                fig=fig,
+                ax=ax,
+                x_data=x_data,
+                y_data=y_data,
+                label=(
+                    f"{round_left(setting.interval_start_time)} s - {round_right(setting.interval_end_time)} s"
+                    if setting.sliced and not single_wav
+                    else None
+                ),
+                smooth=setting.smooth,
+                color=color,
+                style=setting.line_style,
+                std=standard_deviation,
+                time_plot=(
+                    not multiple_plots
+                    and plotting_settings[0].zoom_start + 1
+                    == plotting_settings[0].zoom_end
+                ),
+                scatter=setting.scatter,
+            )
+            self.data_to_plot(graphSettings)
+
+            if not multiple_plots and not single_wav:
+                graphSettings.fig = fig_colorful
+                graphSettings.ax = ax_colorful
+                graphSettings.rainbow = True
+                graphSettings.scatter = False
+                graphSettings.std = None
+
+                self.data_to_plot(graphSettings)
+
+        titles = [
+            (
+                f"{tle_set.code_name.split('.')[0]}"  # die Millisekunden entfernen, für kürzere Namen
+                + (
+                    f"_{round_left(tle_set.interval_start_time)}_{round_right(tle_set.interval_end_time)}"
+                    if tle_set.sliced
+                    else ""
+                )
+                + (f"_{tle_set.zoom_start_wav}" if single_wav else "")
+                # + ("_sw" if single_wav else "")  # single wav (wird aber durch den Interval schon angegeben)
+                + (
+                    "_in" if tle_set.normalize_integrationtime else ""
+                )  # integration normalized
+                + ("_pn" if tle_set.normalize_power else "")  # power normalized
+            )
+            for tle_set in plotting_settings
+        ]
+
+        title = "__".join(titles)
+
+        # plt.title(title)
+
+        if show_plots:
+            # ich weiß, dass das scuffed ist, der Bug ist aber auch nicht mehr aufgetreten bisher...
+            # plt.ioff()
+            for i in range(10):
+                print(i)
+                if i == 9:
+                    print("could not show plot...")
+                    break
+                try:
+                    plt.draw()
+                    plt.show(block=True)
+                    # print("waiting for five sec...")
+                    # time.sleep(5)
+                    break
+                except:
+                    continue
+            # plt.ion()
+
+        root_plot_dir = "plots/" + (
+            "single/" if len(plotting_settings) == 1 else "multi/"
         )
-        if verbose:
-            print("saved plot")
+        # print("figures: " + str(plt.get_fignums()))
 
+        figures = [fig]
+        paths = [root_plot_dir + "neutral/"]
+        suffixes = [""]
+        if not multiple_plots and not single_wav:
+            figures.append(fig_colorful)
+            paths.append(root_plot_dir + "colorful/")
+            paths.append("_colorful")
+
+        for fig, path, suffix in zip(figures, paths, suffixes):
+            fig.savefig(
+                os.path.join(setting.file_path, title + suffix + ".png"), dpi=300
+            )
+            os.makedirs(path, 0o777, exist_ok=True)
+
+            # relpath, da docker und host unterschiedliche roots haben
+            rel_path = (
+                os.path.relpath(
+                    os.path.abspath(setting.file_path), os.path.abspath(path)
+                )
+                + "/"
+            )
+            cwd = os.getcwd()
+            os.chdir(os.path.abspath(path))
+            try:
+                src = rel_path + title + suffix + ".png"
+                dest = title + suffix + ".png"
+                if os.path.islink(dest):
+                    os.remove(dest)
+                os.symlink(src, dest)
+            except FileExistsError as e:
+                print("could not create symlink")
+                print(e.strerror)
+
+            os.chdir(cwd)
+
+        return
         plt.show()
         plt.close()
         plt.cla()
@@ -343,8 +622,19 @@ class Laserplot:
     def update_live_plot(self, i, messdata):
         """Plottet die aktuell gemessene Messung."""
 
+        # print(threading.current_thread() == threading.main_thread())
+
         wav = messdata.wav
         measurements = messdata.measurements
+
+        # trying to calculate a signal to noise ratio...
+        # mean_measurement = np.mean(measurements, axis=0)
+        # std_measurement = np.std(measurements, axis=0)
+        # with np.errstate(divide="ignore", invalid="ignore"):
+        #     snr = np.true_divide(std_measurement, mean_measurement)
+        #     snr[~np.isfinite(snr)] = 0  # set inf and NaN to 0
+        # print(snr)
+
         curr_measurement_index = messdata.curr_measurement_index
 
         if (
@@ -356,87 +646,86 @@ class Laserplot:
 
         measurement = measurements[curr_measurement_index]
 
+        label = f"Spektrum von Messung {curr_measurement_index + 1}"
         self.live_ax.clear()
-        # das Label wieder hinzufügen, nachdem .clear es gelöscht hat
-        self.scatter = self.live_ax.scatter(
-            [], [], label="Mittelwert von 0 Messungen", s=5
+
+        settings = self.GraphSettings(
+            self.live_fig, self.live_ax, wav, measurement, label, True, "black", "-"
         )
-        # funktioniert nicht
-        # live_ax.legend(["Mittelwert von x Messungen"])
-
-        # wurden zuvor von .clear gelöscht
-        self.live_ax.set_xlabel("Wellenlänge (nm)")
-        self.live_ax.set_ylabel("Intensität (Counts)")
-
-        # die Daten im Scatter-Plot aktualisieren
-        self.scatter.set_offsets(np.column_stack((wav, measurement)))
-
-        self.scatter.set_label(f"Spektrum von Messung {curr_measurement_index + 1}")
-
-        # den Wertebereich der Axen anpassen
-        self.live_ax.set_xlim(wav[0], wav[-1])
-        self.live_ax.set_ylim(min(measurement), max(measurement))
-        # self.live_ax.set_ylim(0, 3000)
-        # self.live_ax.set_xlim(350, 600)
-
-        X, _ = np.meshgrid(wav, measurement)
-
-        extent = (np.min(wav), np.max(wav), np.min(measurement), np.max(measurement))
-
-        self.live_ax.imshow(
-            X, clim=self.clim, extent=extent, cmap=self.spectralmap, aspect="auto"
-        )
-        self.live_ax.fill_between(wav, measurement, max(measurement), color="w")
-        # Achsenbeschriftung alle 100 nm
-        self.live_ax.xaxis.set_major_locator(MultipleLocator(100))
-        self.live_fig.tight_layout()
-
-        if USE_GRID:
-
-            self.live_ax.legend(
-                # loc="upper center",
-                # bbox_to_anchor=(0.5, -0.05),
-                frameon=True,
-                fancybox=True,
-                shadow=True,
-                markerscale=4,
-            )
-        else:
-            self.live_ax.legend(
-                # loc="upper center",
-                # bbox_to_anchor=(0.5, -0.05),
-                # frameon=True,
-                # fancybox=True,
-                # shadow=True,
-                markerscale=4,
-            )
+        self.data_to_plot(settings)
 
         self.past_measurement_index = curr_measurement_index
         return (self.scatter,)
 
     def suppressed_pause(self):
+        # if self.stop_event.is_set():
+        #     print(self.stop_event.is_set())
+        #     return
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UserWarning)
             # UserWarning: Starting a Matplotlib GUI outside of the main thread will likely fail.
             plt.pause(0.1)
 
-    def start_gui_thread(self, frames, messdata):
+    def live_thread_job(self):
 
-        self.ani = animation.FuncAnimation(
-            self.live_fig,
-            self.update_live_plot,
-            interval=10,
+        pause_thread = threading.Thread(
+            target=lambda: self.suppressed_pause(),  # ohne lambda wird es direkt ausgeführt
+            daemon=True,
+        )
+        pause_thread.start()  # aus einem Grund, den ich nicht kenne, exited plt.pause nie. plt.draw() und dann plt.show(block=False) hat auch nicht funktioniert.
+        while not self.stop_event.is_set():
+            time.sleep(1)
+            # pause_thread.join(timeout=1)
+
+        # plt.cla()
+        # plt.clf()
+        plt.close(self.live_fig)
+
+    def start_gui(self, frames, messdata):
+
+        self.live_animation = animation.FuncAnimation(
+            fig=self.live_fig,
+            func=self.update_live_plot,
+            interval=25,
             frames=frames,
             fargs=(messdata,),
+            # blit=True,
         )
 
-        threading.Thread(
-            target=lambda: [self.suppressed_pause() for _ in iter(int, 1)],
+        # funktioniert nicht, da kein shared mem
+        # self.live_thread = Process(
+        #     target=lambda: [self.suppressed_pause() for _ in iter(int, 1)], daemon=True
+        # )
+
+        self.live_thread = threading.Thread(
+            # target=lambda: [
+            #     self.suppressed_pause() for _ in iter(int, 1)
+            # ],  #
+            target=self.live_thread_job,
             daemon=True,  # Main-Thread soll nicht auf den Thread warten
-        ).start()
+        )
+        self.live_thread.start()
+
+        # threading.Thread(
+        #     target=plt.show(),  # instead of plt.show()
+        #     daemon=True,  # Main-Thread soll nicht auf den Thread warten
+        # ).start()
+
+        # plt.show()
 
         # threading.Thread(target=send_plot, daemon=True).start()
         # plt.ioff()
 
         # warten, bis der Thread gestartet ist
         time.sleep(0.5)
+
+    def stop_gui(self):
+        if hasattr(self, "stop_event") and hasattr(self, "live_thread"):
+            self.stop_event.set()
+            self.live_thread.join(timeout=5)
+            # self.live_animation.event_source.stop()
+
+        # self.live_thread.terminate()
+        # self.live_thread.join(timeout=3)
+        # if self.live_thread.is_alive():
+        #     self.live_thread.kill()

@@ -1,8 +1,13 @@
 __pycache__/
-stellarnet/
-Messungen/
-Plots/
+docs/
+debug/
+bin/
+Grab ater Messungen/
 secrets.txt
-test.py
-buffered.png
-test.png
+.nextcloud*
+.sync*
+plots/
+messungen_pics/
+messungen/
+Figure*
+stets*
