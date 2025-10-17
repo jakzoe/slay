@@ -1,7 +1,8 @@
 # docker build -t laserdocker .
+# docker build -t laserdocker --target debug .
 # docker system prune # -a for EVERYTHING
 
-FROM debian:latest
+FROM debian:latest AS base
 
 RUN apt -y update && apt -y upgrade
 RUN apt -y install libssl-dev openssl wget build-essential zlib1g-dev libffi-dev libcairo2-dev libgirepository1.0-dev libusb-1.0-0-dev usbutils udev
@@ -28,8 +29,11 @@ ARG INSTALL_PATH="/root/slay"
 RUN echo "mount your code/data directory to ${INSTALL_PATH}, e.g. docker run -v /home/user/slay/myproject:${INSTALL_PATH} laserdocker"
 RUN mkdir -p ${INSTALL_PATH}
 
+# see https://github.com/AlfredoSequeida/hints/issues/44
+# RUN apt -y install libgirepository-2.0-dev
+
 # PyGObject as an alternative to the larger matplotlib backend tkinter:
-RUN /usr/local/bin/pip3 install pyusb pyserial numpy matplotlib PyGObject SciencePlots pylablib
+RUN /usr/local/bin/pip3 install pyusb pyserial numpy matplotlib PyGObject==3.50.0 SciencePlots pylablib
 # SciencePlots is able to use LaTeX (can be disabled using 'no-latex')
 RUN apt-get -y install dvipng texlive-latex-extra texlive-fonts-recommended cm-super
 
@@ -41,6 +45,17 @@ ENV PYTHONPATH="/usr/local/bin/stellarnet"
 
 # WORKDIR $INSTALL_PATH/slay/
 WORKDIR $INSTALL_PATH
+
+FROM base AS debug
+
+RUN /usr/local/bin/pip3 install debugpy
+RUN /usr/local/bin/pip3 install pip-licenses
+
+ENTRYPOINT ["/bin/sh", "-c", "pip-licenses --python=/usr/local/bin/python3; /usr/local/bin/python3 -m debugpy --listen 0.0.0.0:5678 --wait-for-client slay/laser_messungen.py"]
+
+
+FROM base AS release
+
 # exec form
 #ENTRYPOINT ["/usr/local/bin/python3", "nkt.py"]
 ENTRYPOINT ["/usr/local/bin/python3", "slay/laser_messungen.py"]

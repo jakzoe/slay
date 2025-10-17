@@ -59,11 +59,13 @@ run_docker_with_device() {
     return 1
   fi
 
+  # port for attaching debugger
   docker run -v /home/user/slay/myproject/slay:/root/slay \
     -e "DISPLAY=$DISPLAY" \
     --mount type=bind,src=/tmp/.X11-unix,dst=/tmp/.X11-unix \
     --device=/dev/dri:/dev/dri \
     --rm \
+    -p 5678:5678 \
     $devices \
     laserdocker "$arduino_path" "$nkt_path" "$ltb_path"
     
