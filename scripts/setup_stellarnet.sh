@@ -32,9 +32,9 @@ sudo incus exec $CONTAINER_NAME -- pacman -Syu --noconfirm
 sudo incus snapshot create $CONTAINER_NAME clean
 
  
-cd $INSTALL_PATH
+cd $INSTALL_PATH || exit
 git clone https://github.com/jakzoe/slay
-
+git clone https://github.com/jakzoe/slay
 
 # add project-dir as bind-mount
 # when using a virtual machine, fs-options such as noexec on the source do not have any effect
@@ -76,16 +76,16 @@ sudo incus config device add $CONTAINER_NAME arduino usb vendorid=1a86 productid
 sudo incus exec $CONTAINER_NAME -- sudo -u archlinux bash -c 'sudo usermod -aG uucp $(whoami)'
 #sudo incus exec $CONTAINER_NAME -- newgrp uucp
 
-: '
+: "
 # if there is not enough storage:
 sudo incus config device override $CONTAINER_NAME root size=60GB
 sudo incus config device set $CONTAINER_NAME root size 60GB
 # inside the container:
 # fdisk /dev/sda
 # d,n,w : delete the partition, create a new one (with the full size) and write the changes to the partition-table 
-'
+"
 # setup Python 3.10 (required by the Stellarnet-Lib, since there is no .so library for Python 3.11 availible yet)
-sudo incus exec $CONTAINER_NAME -- bash /home/slay/setup_python.sh
+sudo incus exec $CONTAINER_NAME -- bash /home/slay/make_python3_10_9.sh
 
 # start the VM, unset the DISPLAY variable (force the use of Wayland instead of Xorg, for security)
 sudo -EH env DISPLAY= incus restart $CONTAINER_NAME --console=vga

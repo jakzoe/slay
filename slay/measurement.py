@@ -1,11 +1,11 @@
 from multiprocessing import Process
-from Laserplot import Laserplot
-from PlottingSettings import PlottingSettings
+from slay.spectrum_plot import SpectrumPlot
+from slay.settings import PlotSettings
 
-from NKT import NKT
-from LTB import LTB
+from slay.lasers import NKT
+from slay.lasers import LTB
 
-from MeasurementSettings import MeasurementSettings
+from slay.settings import MeasurementSettings
 
 import traceback
 import serial
@@ -22,14 +22,12 @@ np.set_printoptions(suppress=True)
 try:
     from IPython.core import ultratb
 
-    sys.excepthook = ultratb.FormattedTB(
-        color_scheme="Linux", call_pdb=False  # mode="Verbose",
-    )
+    sys.excepthook = ultratb.FormattedTB()
 except Exception as e:
     print(f"Failed to load IPython for the formatting of errors: {e}")
 
 
-class Messdata:
+class SpectrumData:
     def __init__(self, num_gradiants, repetitions, wav):
         self.measurements = np.zeros(
             (num_gradiants, repetitions, len(wav)), dtype=float
@@ -43,7 +41,7 @@ class Messdata:
         return self.measurements, self.wav, self.curr_measurement_index
 
 
-class Lasermessung:
+class Measurement:
     """Wrapper für die Durchführung von slay."""
 
     def is_docker(self):
@@ -53,7 +51,7 @@ class Lasermessung:
         return (
             Path("/.dockerenv").is_file()
             or cgroup.is_file()
-            and "docker" in cgroup.read_text()
+            and "docker" in cgroup.read_text(encoding="utf-8")
         )
 
     def __init__(
@@ -69,7 +67,7 @@ class Lasermessung:
             if not self.is_docker():
                 raise RuntimeError("Not running in a docker container.")
             # from stellarnet.stellarnet_driverLibs import stellarnet_driver3 as sn
-            from driverLibs import stellarnet_driver3 as sn
+            from driverLibs import stellarnet_driver3 as sn  # type: ignore
 
             # print(sn.version())
 
@@ -80,7 +78,7 @@ class Lasermessung:
 
             # exit()
             print("Running in debug-mode.\n")
-            import VirtualSpectrometer as sn
+            from virtual import Spectrometer as sn
 
             DEBUG = True
 
@@ -98,7 +96,7 @@ class Lasermessung:
         self.ltb = LTB(port=ltb_path)
         self.ltb.turn_laser_on()  # auf stand by setzen (dauert 10 Sekunden, da der Laser erst "warm werden" muss)
 
-        self.messdata = Messdata(
+        self.messdata = SpectrumData(
             self.MEASUREMENT_SETTINGS.laser.num_gradiants,
             self.MEASUREMENT_SETTINGS.laser.REPETITIONS,
             self.get_wav(),
@@ -540,17 +538,17 @@ class Lasermessung:
 
         if not measurements_only:
             if not hasattr(self, "plot"):
-                self.plot = Laserplot()
+                self.plot = SpectrumPlot()
 
             self.plot.plot_results(
-                [PlottingSettings(type_dir, code_name, True)],
+                [PlotSettings(type_dir, code_name, True)],
                 self.MEASUREMENT_SETTINGS,
             )
 
     def plot_path(self, settings, mSettings=None):
 
         if not hasattr(self, "plot"):
-            self.plot = Laserplot()
+            self.plot = SpectrumPlot()
 
         self.plot.plot_results(
             settings,
@@ -558,7 +556,7 @@ class Lasermessung:
         )
 
     def enable_gui(self):
-        self.plot = Laserplot()
+        self.plot = SpectrumPlot()
         self.plot.start_gui(self.MEASUREMENT_SETTINGS.laser.REPETITIONS, self.messdata)
 
     def disable_gui(self):

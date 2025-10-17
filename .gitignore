@@ -1,15 +1,25 @@
 __pycache__/
-docs/
-debug/
-bin/
-Grab ater Messungen/
-secrets.txt
+.venv*/
+.vscode/
+
 .nextcloud*
 .sync*
+
+bin/
+docs/
+debug/
+Grab alter Messungen/
 plots/
 messungen_pics/
 messungen/
-Figure*
-stets*
-.vscode/
 bilder-der-messung/
+# stellarnet drivers
+secrets.txt
+
+# package files
+*.egg
+*.eggs/
+.installed.cfg
+*.egg-info
+pip-wheel-metadata
+dist/

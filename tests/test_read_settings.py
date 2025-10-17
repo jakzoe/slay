@@ -1,10 +1,10 @@
 import unittest
 import json
 from tempfile import NamedTemporaryFile
-from MeasurementSettings import MeasurementSettings
+from slay.settings import MeasurementSettings
 
 
-class TestMeasurementSettings(unittest.TestCase):
+class TestReadSettings(unittest.TestCase):
 
     def setUp(self):
         self.settings = MeasurementSettings(
@@ -62,7 +62,7 @@ class TestMeasurementSettings(unittest.TestCase):
             self.settings.save_as_json(temp_file)
             temp_file_path = temp_file.name
 
-        with open(temp_file_path, "r") as file:
+        with open(temp_file_path, "r", encoding="utf-8") as file:
             loaded_data = json.load(file)
 
         self.assertEqual(loaded_data, self.settings_as_json)

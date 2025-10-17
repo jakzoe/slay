@@ -3,10 +3,10 @@
 #sudo apt install libssl-dev openssl wget build-essential zlib1g-dev libffi-dev libusb-1.0-0-dev usbutils -y
 sudo pacman -S --needed --noconfirm base-devel git wget libusb usbutils
 
-cd /usr/src
+cd /usr/src || exit
 sudo wget https://www.python.org/ftp/python/3.10.9/Python-3.10.9.tgz
 sudo tar zxvf Python-3.10.9.tgz
-cd Python-3.10.9
+cd Python-3.10.9 || exit
 sudo ./configure --enable-optimizations
 #make -j2
 sudo make install -j4

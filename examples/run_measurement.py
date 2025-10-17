@@ -1,7 +1,7 @@
-from MeasurementSettings import MeasurementSettings
+from slay.settings import MeasurementSettings
 import os
 import sys
-from Lasermessung import Lasermessung
+from slay.measurement import Measurement
 
 try:
     ARDUINO_PATH = sys.argv[1]
@@ -67,7 +67,7 @@ if __name__ == "__main__":
 
     measurement_settings.print_status()
     # exit()
-    measurement = Lasermessung(ARDUINO_PATH, NKT_PATH, LTB_PATH, measurement_settings)
+    measurement = Measurement(ARDUINO_PATH, NKT_PATH, LTB_PATH, measurement_settings)
 
     # measurement.infinite_measuring()
     # exit()

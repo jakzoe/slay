@@ -1,7 +1,12 @@
+"""
+Das hier ist hauptsächlich ChatGPT, mit den jeweiligen Dokumentationen als Input.
+Prinzipiell habe ich alles getestet und Fehler korrigiert.
+"""
+
 import serial
 import time
 import sys
-from typing import Union, Dict, List, Optional
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 from enum import IntFlag
 
@@ -96,13 +101,9 @@ class LaserStatus:
 class LaserError(Exception):
     """Base exception for laser-related errors."""
 
-    pass
-
 
 class LaserProtocolError(LaserError):
     """Raised when there's an error in the communication protocol."""
-
-    pass
 
 
 class LTB:
@@ -112,6 +113,8 @@ class LTB:
     DA = "!"  # Destination address (default: 0x21)
     SA = "@"  # Source address (default: 0x40)
     EC = "\r"  # End character (CR, 0x0D)
+
+    ser: serial.Serial
 
     def __new__(cls, port: str, baudrate: int = 9600, timeout: int = 1):
         try:
@@ -126,7 +129,7 @@ class LTB:
             return instance
         except serial.SerialException:
             print("using virtual LTB LASER")
-            from VirtualLTB import LTB as VirtualLTB
+            from slay.virtual import LTB as VirtualLTB
 
             return VirtualLTB(port)
 
@@ -153,7 +156,7 @@ class LTB:
 
     def _send_command(
         self, req_data_unit: str, expect_reply: bool = False, retries: int = 3
-    ) -> Union[str, dict]:
+    ) -> dict:
         for attempt in range(retries):
             try:
                 telegram = self._construct_request(req_data_unit)
@@ -179,7 +182,12 @@ class LTB:
             except serial.SerialException as e:
                 raise LaserError(f"Serial communication error: {e}")
 
-    def _parse_response(self, response: str) -> Union[str, dict]:
+        # nur für Dich, Pylance
+        raise RuntimeError(
+            "Unreachable: retries loop exited without return or exception"
+        )
+
+    def _parse_response(self, response: str) -> dict:
         if response == self.EC:
             return {"status": "ACK"}
         if response.startswith(self.SC2):
@@ -191,7 +199,7 @@ class LTB:
             if da != self.SA or sa != self.DA:
                 raise LaserProtocolError("Invalid address in reply")
             return {"type": "Reply", "data": data}
-        elif response.startswith("\x1B\x1B"):
+        elif response.startswith("\x1b\x1b"):
             error_type = response[2] if len(response) > 2 else "Unknown"
             error_messages = {
                 "1": "Checksum Error",
@@ -534,3 +542,81 @@ if __name__ == "__main__":
         print(
             f"{time.strftime('%Y-%m-%d %H:%M:%S')} - INFO - Operation completed. Laser shut down."
         )
+
+
+class NKT:
+
+    def __init__(self, laser_path):
+
+        self.laser_register = 1
+        # 1/Faktor zur Basiseinheit
+        self.registers = {
+            "emission": {"addr": 0x30, "type": "u8", "mode": "w"},
+            "power": {"addr": 0x3E, "type": "u8", "mode": "w"},
+            "temperature": {"addr": 0x1B, "type": "i16", "factor": 10, "mode": "r"},
+            "trig_level": {"addr": 0x24, "type": "u16", "factor": 1000, "mode": "r"},
+            "display_backlight": {"addr": 0x26, "type": "u16", "mode": "w"},
+            "operating_mode": {"addr": 0x31, "type": "u8", "mode": "w"},
+            "interlock_status": {"addr": 0x32, "type": "u16", "mode": "rw"},
+            "pulse_frequency": {"addr": 0x33, "type": "u32", "mode": "w"},
+            "pulses_per_burst": {"addr": 0x34, "type": "u16", "mode": "w"},
+            "watchdog_interval": {"addr": 0x35, "type": "u8", "mode": "w"},
+            "max_frequency": {"addr": 0x36, "type": "u32", "mode": "r"},
+            "status_bits": {"addr": 0x66, "type": "u16", "mode": "r"},
+            "optical_frequency": {"addr": 0x71, "type": "u32", "mode": "r"},
+            "actual_frequency": {
+                "addr": 0x75,
+                "type": "u32",
+                "factor": 100,
+                "mode": "r",
+            },
+            "display_text": {"addr": 0x78, "type": "ascii", "mode": "r"},
+            "calculated_power": {"addr": 0x7A, "type": "u8", "mode": "r"},
+            "user_area": {"addr": 0x8D, "type": "ascii", "mode": "w"},
+            "voltage": {"addr": 0x1A, "type": "u16", "factor": 1000, "mode": "r"},
+        }
+
+        try:
+            from pylablib.devices.NKT import InterbusBackendError  # type: ignore
+
+            try:
+                from pylablib.devices import NKT  # type: ignore
+
+                self.laser = NKT.GenericInterbusDevice(laser_path)
+                self.get_register("temperature")  # fails wenn der Laser aus ist
+            except InterbusBackendError:
+                print("using virttual NKT LASER")
+                from slay.virtual import NKT
+
+                self.laser = NKT.GenericInterbusDevice(laser_path)
+        except ModuleNotFoundError:
+            print("using virttual NKT LASER")
+            from slay.virtual import NKT
+
+            self.laser = NKT.GenericInterbusDevice(laser_path)
+
+    def set_register(self, name, value):
+
+        print(f"set {name} to {value}")
+
+        if name not in self.registers:
+            raise ValueError(f"Unknown register: {name}")
+        reg = self.registers[name]
+        # if self.get_register(name) == value:
+        if "w" not in reg["mode"]:
+            print("NKT: Could not set register, read only")
+            return
+        self.laser.ib_set_reg(self.laser_register, reg["addr"], value, reg["type"])
+
+    def get_register(self, name):
+        if name not in self.registers:
+            raise ValueError(f"Unknown register: {name}")
+        reg = self.registers[name]
+        if "r" not in reg["mode"]:
+            return "ERROR: Write only"
+        if "factor" in reg:
+            return (
+                self.laser.ib_get_reg(self.laser_register, reg["addr"], reg["type"])
+                / reg["factor"]
+            )
+        return self.laser.ib_get_reg(self.laser_register, reg["addr"], reg["type"])

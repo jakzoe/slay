@@ -1,6 +1,6 @@
-from Laserplot import Laserplot
-from PlottingSettings import PlottingSettings
-from MeasurementSettings import MeasurementSettings
+from slay.spectrum_plot import SpectrumPlot
+from slay.settings import PlotSettings
+from slay.settings import MeasurementSettings
 import os, sys, io
 import time
 import shutil
@@ -67,7 +67,7 @@ def make_plots(path, name):
 
     # Generellen Durchschnitt plotten
     if plot_general:
-        p_settings.append([PlottingSettings(path, name, smooth=True)])
+        p_settings.append([PlotSettings(path, name, smooth=True)])
 
     # Fluoreszenz-Peak plotten (ca. zwischen 720 und 740 nm bei Chlorophyll)
     if plot_fluo:
@@ -75,7 +75,7 @@ def make_plots(path, name):
         p_settings.extend(
             (
                 [
-                    PlottingSettings(
+                    PlotSettings(
                         path,
                         name,
                         smooth=True,
@@ -84,7 +84,7 @@ def make_plots(path, name):
                     )
                 ],
                 [
-                    PlottingSettings(
+                    PlotSettings(
                         path,
                         name,
                         smooth=True,
@@ -93,7 +93,7 @@ def make_plots(path, name):
                     )
                 ],
                 [
-                    PlottingSettings(
+                    PlotSettings(
                         path,
                         name,
                         smooth=True,
@@ -109,7 +109,7 @@ def make_plots(path, name):
                     #     single_wav=750,
                     #     scatter=True,
                     # ),
-                    PlottingSettings(
+                    PlotSettings(
                         path,
                         name,
                         smooth=True,
@@ -137,7 +137,7 @@ def make_plots(path, name):
     if plot_time_slices:
         p_settings.append(
             [
-                PlottingSettings(
+                PlotSettings(
                     path,
                     name,
                     smooth=True,
@@ -147,7 +147,7 @@ def make_plots(path, name):
                     line_style="-",
                     color="black",
                 ),
-                PlottingSettings(
+                PlotSettings(
                     path,
                     name,
                     smooth=True,
@@ -156,7 +156,7 @@ def make_plots(path, name):
                     line_style="--",
                     color="red",
                 ),
-                PlottingSettings(
+                PlotSettings(
                     path,
                     name,
                     smooth=True,
@@ -169,7 +169,7 @@ def make_plots(path, name):
         )
 
     for p in p_settings:
-        Laserplot.plot_results(p, m_settings, show_plots=False)
+        SpectrumPlot.plot_results(p, m_settings, show_plots=False)
 
     sys.stdout.flush()
     # sys.stderr.flush()

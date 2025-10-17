@@ -1,6 +1,8 @@
 from typing import Union, Dict, List, Optional
 from dataclasses import dataclass
 from enum import IntFlag
+import numpy as np
+import time
 
 
 class LaserMode(IntFlag):
@@ -157,25 +159,25 @@ class LTB:
         pass
 
     def get_short_status(self) -> Dict:
-        return 0
+        return {}
 
     def get_stat7(self) -> Dict:
-        return 0
+        return {}
 
     def get_extended_status(self) -> LaserStatus:
         return self._parse_status()
 
     def get_version_info(self) -> Dict:
-        return 0
+        return {}
 
     def get_serial_numbers(self) -> Dict:
-        return 0
+        return {}
 
     def get_attenuator_status(self) -> Dict:
-        return 0
+        return {}
 
     def get_energy_values(self) -> List[float]:
-        return 0
+        return []
 
     def close(self) -> None:
         pass
@@ -185,3 +187,69 @@ class LTB:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+
+
+class NKT:
+    @staticmethod
+    def GenericInterbusDevice(laser_path):
+        return NKT()
+
+    def ib_set_reg(self, laser_register, addr, value, val_type):
+        pass
+
+    def ib_get_reg(self, laser_register, addr, val_type):
+        return 0
+
+
+class Spectrometer:
+    # spectrometer, wav = sn.array_get_spec(0)
+    def array_get_spec(self, *args, **kwargs):
+        time.sleep(0.5)
+        return None, self.array_get_spec_only()
+
+    def array_get_spec_only(self, *args, **kwargs):
+        return None
+
+    def getSpectrum_X(self, *args, **kwargs):
+        return np.sort(np.abs(np.random.rand(2048, 1) * 1000), axis=0)
+
+    # sn.getDeviceId(spectrometer))
+    def getDeviceId(self, *args, **kwargs):
+        return -1
+
+    # sn.ext_trig(spectrometer, True)
+    def ext_trig(self, arg, *args, **kwargs):
+        pass
+
+    # sn.setParam(spectrometer, INTTIME, SCAN_AVG, SMOOTH, XTIMING, True)
+    def setParam(self, arg, *args, **kwargs):
+        pass
+
+    # var = sn.array_spectrum(spectrometer, wav)
+    def array_spectrum(self, arg, *args, **kwargs):
+        return np.random.rand(2048, 2) * 100
+
+    # var = sn.getSpectrum_Y(spectrometer)
+    def getSpectrum_Y(self, arg, *args, **kwargs):
+        # return np.abs(
+        #     np.random.rand(
+        #         2048,
+        #     )
+        #     * 100
+        # )
+
+        # Gauß:
+        time.sleep(0.5)
+        mu = 0
+        sigma = 1
+        x = np.linspace(-5, 5, 2048)
+        return (
+            (1 / (2 * np.sqrt(2 * np.pi)))
+            * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
+            * 100
+            * 2000
+        )
+
+    # sn.reset(spectrometer)
+    def reset(self, arg, *args, **kwargs):
+        pass

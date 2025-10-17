@@ -1,5 +1,5 @@
-from MeasurementSettings import MeasurementSettings
-from PlottingSettings import PlottingSettings
+from slay.settings import MeasurementSettings
+from slay.settings import PlotSettings
 
 import numpy as np
 from matplotlib.ticker import MultipleLocator
@@ -42,7 +42,7 @@ from math import ceil, floor
 from dataclasses import dataclass
 
 
-class Laserplot:
+class SpectrumPlot:
 
     @dataclass
     class GraphSettings:
@@ -197,7 +197,7 @@ class Laserplot:
             norm = plt.Normalize(*clim)
             wl = np.arange(clim[0], clim[1] + 1, 2)
             colorlist = list(
-                zip(norm(wl), [Laserplot.wavelength_to_rgb(w) for w in wl])
+                zip(norm(wl), [SpectrumPlot.wavelength_to_rgb(w) for w in wl])
             )
             spectralmap = matplotlib.colors.LinearSegmentedColormap.from_list(
                 "spectrum", colorlist
@@ -395,7 +395,7 @@ class Laserplot:
             settings.fig.canvas.draw()
 
             if (
-                Laserplot.legend_collides(
+                SpectrumPlot.legend_collides(
                     settings.ax,
                     settings.x_data,
                     settings.y_data,
@@ -447,7 +447,7 @@ class Laserplot:
 
     @staticmethod
     def plot_results(
-        plotting_settings: list[PlottingSettings],
+        plotting_settings: list[PlotSettings],
         measurement_settings: MeasurementSettings,
         colors=None,
         show_plots=True,
@@ -767,7 +767,7 @@ class Laserplot:
                 def round_right(x, y):
                     return ceil(y) if round(x) == round(y) else round(y)
 
-                graphSettings = Laserplot.GraphSettings(
+                graphSettings = SpectrumPlot.GraphSettings(
                     fig=fig,
                     ax=ax,
                     x_data=x_data,
@@ -787,7 +787,7 @@ class Laserplot:
                     interpolate=setting.interpolate,
                     num_others=len(plotting_settings) - 1,
                 )
-                collide_graph = Laserplot.data_to_plot(graphSettings, collide_graph)
+                collide_graph = SpectrumPlot.data_to_plot(graphSettings, collide_graph)
 
                 if not multiple_plots and not setting.single_wav:
                     if fig_colorful is None and ax_colorful is None:
@@ -798,7 +798,7 @@ class Laserplot:
                     graphSettings.scatter = False
                     graphSettings.std = None
 
-                    Laserplot.data_to_plot(graphSettings)
+                    SpectrumPlot.data_to_plot(graphSettings)
         titles = [
             (
                 f"{tle_set.code_name.split('.')[0]}"  # die Millisekunden entfernen, für kürzere Namen
