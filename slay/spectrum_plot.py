@@ -4,6 +4,7 @@ import copy
 from math import ceil, floor
 import numpy as np
 import scipy
+import ruptures as rpt
 
 from matplotlib.ticker import MultipleLocator
 
@@ -51,11 +52,12 @@ class SpectrumPlot:
         rainbow: bool = False
         scatter: bool = True
         marker_size: int = 4
-        time_plot: bool = False
+        single_wav: bool = False
         interpolate: bool = False
         # wie viele andere Graphen ebenfalls noch in den Plot kommen
         num_others: int = 0
         use_grid: bool = False
+        normalized: bool = False
 
     @staticmethod
     def wavelength_to_rgb(wavelength, gamma=0.8):
@@ -156,11 +158,11 @@ class SpectrumPlot:
 
         line_data = (
             smooth_curve(settings.y_data)
-            if not settings.time_plot and settings.smooth
+            if not settings.single_wav and settings.smooth
             else settings.y_data
         )
 
-        if settings.rainbow and not settings.time_plot:
+        if settings.rainbow and not settings.single_wav:
             X, _ = np.meshgrid(settings.x_data, line_data)
 
             extent = (
@@ -190,7 +192,7 @@ class SpectrumPlot:
                 color="w",
             )
 
-        if settings.std is not None and not settings.time_plot:
+        if settings.std is not None and not settings.single_wav:
 
             std = smooth_curve(settings.std) if settings.smooth else settings.std
             assert len(settings.x_data) == len(line_data) == len(std)
@@ -224,8 +226,9 @@ class SpectrumPlot:
                 settings.y_data,
                 label=settings.label,
                 s=settings.marker_size,
-                color="gray" if not settings.time_plot else "blue",
-                alpha=0.4 if not settings.time_plot else 1,
+                color="gray" if not settings.single_wav else settings.color,  # "blue",
+                # marker="." if not settings.time_plot else "x",
+                alpha=0.4 if not settings.single_wav else 1,
             )
         #     ax.plot(
         #         wav, line_data, label=None if label is None else "smooth"
@@ -239,7 +242,7 @@ class SpectrumPlot:
         #         s=marker_size,
         #     )  #  color=colors[iterator],
 
-        if not settings.time_plot:
+        if not settings.single_wav:
             settings.ax.plot(
                 settings.x_data,
                 line_data,
@@ -250,99 +253,113 @@ class SpectrumPlot:
             )
 
         if settings.interpolate:
-            # den konstanten Teil am Ende wegschneiden (der eine sehr geringe Steigung hat)
-            index = len(settings.y_data)
-            step_size = ceil(len(settings.y_data) / 10)
-            if step_size > 1:
-                for i in range(len(settings.y_data) - step_size - 1, 0, -step_size):
-                    m = abs(
-                        np.polyfit(
-                            settings.x_data[i : i + step_size],
-                            settings.y_data[i : i + step_size],
-                            deg=1,
-                        )[0]
-                    )
-                    if np.rad2deg(np.arctan(m)) > 25:
-                        index = i
-                        break
+            # # den konstanten Teil am Ende wegschneiden (der eine sehr geringe Steigung hat)
+            # index = len(settings.y_data)
+            # step_size = ceil(len(settings.y_data) / 10)
+            # if step_size > 1:
+            #     for i in range(len(settings.y_data) - step_size - 1, 0, -step_size):
+            #         m = abs(
+            #             np.polyfit(
+            #                 settings.x_data[i : i + step_size],
+            #                 settings.y_data[i : i + step_size],
+            #                 deg=1,
+            #             )[0]
+            #         )
+            #         if np.rad2deg(np.arctan(m)) > 25:
+            #             index = i
+            #             break
 
-            cut_data_x = settings.x_data[:index]
-            cut_data_y = settings.y_data[:index]
-            linear_curve = np.polyfit(
-                cut_data_x,
-                cut_data_y,
-                deg=1,
-            )
-            m = linear_curve[0]
-            n = linear_curve[1]
-            x_fitted = np.array([cut_data_x[0], cut_data_x[-1]])
-            y_fitted = m * x_fitted + n
+            algo = rpt.Pelt(model="rbf", jump=1).fit(settings.y_data)  # Dynp
+            try:
+                result = algo.predict(pen=0.7)  # n_bkps=2
+            except rpt.exceptions.BadSegmentationParameters:
+                result = [0, len(settings.y_data), len(settings.y_data)]
 
-            if m == 0:
-                label_str = rf"$\text{{g}}(x) \approx {n:.0f}$"
-            elif n == 0:
-                label_str = rf"$\text{{g}}(x) \approx {m:.2f}x$"
-            else:
-                sign = "+" if n > 0 else ""
-                label_str = rf"$\text{{g}}(x) \approx {m:.2f}x{sign}{n:.0f}$"
+            # -1 ist immer der letzte Index des Signals
+            start, end = result[0], result[-2] if len(result) > 2 else result[-1]
 
-            settings.ax.plot(
-                x_fitted,
-                y_fitted,
-                color="red",
-                # linewidth=2,
-                label=label_str,
-            )
-            # verhindern, dass das Label gar nicht erst erstellt wird (siehe if weiter unten)
-            settings.label = " " if settings.label is None else settings.label
+            if end - start > 10:
+                cut_data_x = settings.x_data[start:end]
+                cut_data_y = settings.y_data[start:end]
 
-            # bei Noise kommt manchmal ein OptimizeWarning
-            parameter = scipy.optimize.curve_fit(
-                lambda t, a, b, c: a * np.exp(b * t) + c,
-                settings.x_data,
-                settings.y_data,
-                # a ist ungefähr [0] - c, c ungefähr [-1]
-                p0=(
-                    settings.y_data[0] - settings.y_data[-1],
-                    -0.0015,  # bisschen rumprobiert
-                    settings.y_data[-1],
-                ),
-                maxfev=20_000,
-            )[0]
-            x_fitted = np.linspace(
-                np.min(settings.x_data), np.max(settings.x_data), 1000
-            )
-            a = parameter[0]
-            b = parameter[1]
-            c = parameter[2]
-            y_fitted_expo = a * np.exp(b * x_fitted) + c
-            b_format = f"{b:.2e}".split("e")
-            b_coeff = float(b_format[0])
-            b_exp = int(b_format[1])
+                linear_curve = np.polyfit(
+                    cut_data_x,
+                    cut_data_y,
+                    deg=1,
+                )
+                m = linear_curve[0]
+                n = linear_curve[1]
+                x_fitted = np.array([cut_data_x[0], cut_data_x[-1]])
+                y_fitted = m * x_fitted + n
 
-            if b_exp == 0:
-                exponent_str = f"{b_coeff:.2f} t"
-            else:
-                exponent_str = f"{b_coeff:.2f} \\cdot 10^{{{b_exp}}} t"
+                if m == 0:
+                    label_str = rf"$\text{{g}}(x) \approx {n:.0f}$"
+                elif n == 0:
+                    label_str = rf"$\text{{g}}(x) \approx {m:.2f}x$"
+                else:
+                    sign = "+" if n > 0 else ""
+                    label_str = rf"$\text{{g}}(x) \approx {m:.2f}x{sign}{n:.0f}$"
 
-            if c == 0:
-                c_str = ""
-            elif c > 0:
-                c_str = f"+{c:.0f}"
-            else:
-                c_str = f"{c:.0f}"
+                settings.ax.plot(
+                    x_fitted,
+                    y_fitted,
+                    color="red",
+                    # linewidth=2,
+                    label=label_str,
+                )
+                # verhindern, dass das Label gar nicht erst erstellt wird (siehe if weiter unten)
+                settings.label = " " if settings.label is None else settings.label
 
-            label_str = (
-                rf"$\text{{exp}}(x) \approx {a:.0f} e^{{{exponent_str}}} {c_str}$"
-            )
+                ### Exponenzieller Fit
 
-            settings.ax.plot(
-                x_fitted,
-                y_fitted_expo,
-                color="orange",
-                # linewidth=2,
-                label=label_str,
-            )
+                cut_data_x = settings.x_data[start:]
+                cut_data_y = settings.y_data[start:]
+
+                # bei Noise kommt manchmal ein OptimizeWarning
+                parameter = scipy.optimize.curve_fit(
+                    lambda t, a, b, c: a * np.exp(b * t) + c,
+                    cut_data_x,
+                    cut_data_y,
+                    # a ist ungefähr [0] - c, c ungefähr [-1]
+                    p0=(
+                        cut_data_y[0] - cut_data_y[-1],
+                        -0.0015,  # bisschen rumprobiert
+                        cut_data_y[-1],
+                    ),
+                    maxfev=20_000,
+                )[0]
+                x_fitted = np.linspace(np.min(cut_data_x), np.max(cut_data_x), 1000)
+                a = parameter[0]
+                b = parameter[1]
+                c = parameter[2]
+                y_fitted_expo = a * np.exp(b * x_fitted) + c
+                b_format = f"{b:.2e}".split("e")
+                b_coeff = float(b_format[0])
+                b_exp = int(b_format[1])
+
+                if b_exp == 0:
+                    exponent_str = f"{b_coeff:.2f} t"
+                else:
+                    exponent_str = f"{b_coeff:.2f} \\cdot 10^{{{b_exp}}} t"
+
+                if c == 0:
+                    c_str = ""
+                elif c > 0:
+                    c_str = f"+{c:.0f}"
+                else:
+                    c_str = f"{c:.0f}"
+
+                label_str = (
+                    rf"$\text{{exp}}(x) \approx {a:.0f} e^{{{exponent_str}}} {c_str}$"
+                )
+
+                settings.ax.plot(
+                    x_fitted,
+                    y_fitted_expo,
+                    color="orange",
+                    # linewidth=2,
+                    label=label_str,
+                )
 
         # die Daten im Scatter-Plot aktualisieren
         # self.scatter.set_offsets(np.column_stack((wav, measurement)))
@@ -353,27 +370,33 @@ class SpectrumPlot:
 
         # wurden zuvor von .clear gelösch
         settings.ax.set_xlabel(
-            "Wellenlänge (nm)" if not settings.time_plot else "Zeit (s)"
+            "Wellenlänge (nm)" if not settings.single_wav else "Zeit (s)"
         )
         settings.ax.set_ylabel("Intensität (Counts)")
 
         # den Wertebereich der Axen anpassen (mit Puffer)
         puffer = 0  # 10
-        if not settings.time_plot:
+        if not settings.single_wav:
             settings.ax.set_xlim(
                 settings.x_data[0] - puffer, settings.x_data[-1] + puffer
             )
 
         settings.ax.set_ylim(
-            max(0, min(line_data), settings.ax.get_ylim()[0]),
-            max(max(line_data), 2000, settings.ax.get_ylim()[1]),
+            min(min(line_data), settings.ax.get_ylim()[0]),
+            max(
+                max(line_data),
+                0 if settings.normalized else 2000,
+                settings.ax.get_ylim()[1],
+            ),
         )
+
+        # settings.ax.set_yscale("log")
 
         # ax.set_ylim(1500, max(measurement))
         # ax.set_xlim(350, 600)
 
         # Achsenbeschriftung alle 100 nm
-        if not settings.time_plot:
+        if not settings.single_wav:
             settings.ax.xaxis.set_major_locator(MultipleLocator(100))
         # durch die Legende ist weniger Platz, der Plot wird kleiner, die ticks überlappen ansonsten
         if settings.num_others == 0:
@@ -448,7 +471,10 @@ class SpectrumPlot:
 
     @staticmethod
     def measurement_from_disk(
-        measurement_path: str, measurement_settings: MeasurementSettings
+        measurement_path: str,
+        measurement_settings: MeasurementSettings,
+        # das erste ist normalerweise eine Störung (bei meinem Spektrometer)
+        remove_first=False,
     ):
 
         loaded_array = np.load(measurement_path)
@@ -471,7 +497,15 @@ class SpectrumPlot:
             == len(time_stamps_gradient)
         )
 
-        return spectrometer_data_gradient, x_data, time_stamps_gradient
+        setting = copy.deepcopy(measurement_settings)
+
+        setting.laser.REPETITIONS = spectrometer_data_gradient.shape[1] - remove_first
+        return (
+            spectrometer_data_gradient[:, remove_first:, :],
+            x_data,
+            time_stamps_gradient[:, remove_first:],
+            setting,
+        )
 
     @staticmethod
     def save_plots(
@@ -485,52 +519,35 @@ class SpectrumPlot:
             fig_save_path + ".png",
             dpi=600,
         )
-        # damit es einfacher ist, die einzelnen Messungen zu finden, wenn der Plot in einem höheren Common Dir landet.
-        if plotting_settings and len(plotting_settings) != 1:
-            with open(fig_save_path + ".json", "w", encoding="utf-8") as f:
-                json.dump(
-                    [
-                        setting.measurement_path.replace("npz", "json")
-                        for setting in plotting_settings
-                    ],
-                    f,
-                    indent=4,
-                )
+        # remove with:
+        # # damit es einfacher ist, die einzelnen Messungen zu finden, wenn der Plot in einem höheren Common Dir landet.
+        # if plotting_settings and len(plotting_settings) != 1:
+        #     with open(fig_save_path + ".json", "w", encoding="utf-8") as f:
+        #         json.dump(
+        #             [
+        #                 setting.measurement_path.replace("npz", "json")
+        #                 for setting in plotting_settings
+        #             ],
+        #             f,
+        #             indent=4,
+        #         )
 
         if close_fig:
             plt.close(fig)
-        return
-        os.makedirs(path, 0o777, exist_ok=True)
-
-        # relpath, da docker und host unterschiedliche roots haben
-        rel_path = (
-            os.path.relpath(os.path.abspath(setting.save_dir), os.path.abspath(path))
-            + "/"
-        )
-        cwd = os.getcwd()
-        os.chdir(os.path.abspath(path))
-        try:
-            src = rel_path + title + suffix + ".png"
-            dest = title + suffix + ".png"
-            if os.path.islink(dest):
-                os.remove(dest)
-            os.symlink(src, dest)
-        except FileExistsError as e:
-            print("could not create symlink")
-            print(e.strerror)
-
-        os.chdir(cwd)
 
     @staticmethod
     def plot_heatmap(
         measurement_path: str,
-        measurement_settings: MeasurementSettings,
+        ms: MeasurementSettings,
         heatmap_plot_index: int,
     ):
 
-        spectrometer_data_gradient, x_data, time_stamps_gradient = (
-            SpectrumPlot.measurement_from_disk(measurement_path, measurement_settings)
-        )
+        (
+            spectrometer_data_gradient,
+            x_data,
+            time_stamps_gradient,
+            measurement_settings,
+        ) = SpectrumPlot.measurement_from_disk(measurement_path, ms, remove_first=True)
 
         fig_heat, ax_heat = plt.subplots()
         # bisher nur den ersten Gradient plotten, nicht mehr
@@ -554,13 +571,13 @@ class SpectrumPlot:
     @staticmethod
     def plot_3d_gradient(
         measurement_path: str,
-        measurement_settings: MeasurementSettings,
+        ms: MeasurementSettings,
         grad_start: int = 0,
         grad_end: int = -1,
     ):
 
-        spectrometer_data_gradient, x_data, _ = SpectrumPlot.measurement_from_disk(
-            measurement_path, measurement_settings
+        spectrometer_data_gradient, x_data, _, measurement_settings = (
+            SpectrumPlot.measurement_from_disk(measurement_path, ms, remove_first=True)
         )
 
         if grad_end < 0:
@@ -637,7 +654,7 @@ class SpectrumPlot:
     @staticmethod
     def plot_results(
         plotting_settings: list[PlotSettings],
-        measurement_settings: MeasurementSettings,
+        ms: MeasurementSettings,
         colors=None,
         show_plots=True,
         use_grid=False,
@@ -678,10 +695,8 @@ class SpectrumPlot:
             plt.grid(visible=True, which="both", linestyle="--", linewidth=0.5)
 
         if colors is None:
-            # colors = plt.cm.jet(np.linspace(0, 1, len(file_list) + 2))
-            colors = matplotlib.colormaps["jet"](
-                np.linspace(0, 1, len(plotting_settings) + 2)
-            )
+            cmap = plt.get_cmap("tab10")
+            colors = [cmap(i) for i in range(len(plotting_settings))]
 
         # ob mehrere Graphen geplottet werden
         multiple_plots = len(plotting_settings) != 1
@@ -694,7 +709,11 @@ class SpectrumPlot:
             [os.path.dirname(setting.measurement_path) for setting in plotting_settings]
         )
 
-        time_plot = not multiple_plots and plotting_settings[0].single_wav
+        # verschiedene Werte werden im Verlauf auf einer Kopie umgerechnet/geändert. Diese Änderungen speichern.
+        changed_plotting_settings = []
+
+        if any(s.single_wav for s in plotting_settings):
+            assert all(s.single_wav for s in plotting_settings)
         for i, orig_setting in enumerate(plotting_settings):
 
             # file_list = [
@@ -703,10 +722,15 @@ class SpectrumPlot:
             #     if f.endswith(".npz")
             # ]
 
-            spectrometer_data_gradient, x_data, time_stamps_gradient = (
-                SpectrumPlot.measurement_from_disk(
-                    orig_setting.measurement_path, measurement_settings
-                )
+            (
+                spectrometer_data_gradient,
+                x_data,
+                time_stamps_gradient,
+                measurement_settings,
+            ) = SpectrumPlot.measurement_from_disk(
+                orig_setting.measurement_path,
+                ms,
+                remove_first=True,
             )
 
             if orig_setting.grad_end == orig_setting.default_max:
@@ -728,6 +752,7 @@ class SpectrumPlot:
 
                 # alternativ könnte eins auch eine reset Methode machen, das ist aber denke ich simpler
                 setting = copy.deepcopy(orig_setting)
+                changed_plotting_settings.append(setting)
 
                 # falls es in Prozent angegeben wurde
                 if setting.interval_start_time < 1 and setting.interval_end_time <= 1:
@@ -796,17 +821,6 @@ class SpectrumPlot:
 
                 assert measurement_settings.laser.REPETITIONS == len(spectrometer_data)
 
-                normalize_integrationtime_factor = (
-                    measurement_settings.specto.INTTIME
-                    if setting.normalize_integrationtime
-                    else 1
-                )
-                normalize_power = (
-                    measurement_settings.laser.INTENSITY
-                    if setting.normalize_power
-                    else 1
-                )
-
                 # # aus den gesamten Daten den durch die Slices definierten Teil ausschneiden
                 # extracted_data = np.zeros(
                 #     (
@@ -830,14 +844,23 @@ class SpectrumPlot:
                     )
                     return
 
-                extracted_data = (
-                    spectrometer_data[
-                        setting.interval_start : setting.interval_end,
-                        setting.zoom_start : setting.zoom_end,
-                    ]
-                    / normalize_integrationtime_factor
-                    / normalize_power
+                extracted_data = spectrometer_data[
+                    setting.interval_start : setting.interval_end,
+                    setting.zoom_start : setting.zoom_end,
+                ]
+
+                normalize_integrationtime_factor = (
+                    measurement_settings.specto.INTTIME
+                    if setting.normalize_integrationtime
+                    else 1
                 )
+                normalize_factor = (
+                    np.max(spectrometer_data) if setting.normalize_data else 1
+                )
+
+                extracted_data /= normalize_factor
+                extracted_data /= normalize_integrationtime_factor
+
                 if setting.single_wav:
                     # setting.zoom_start : setting.zoom_end ist nur ein Element in diesem Fall
                     extracted_data = extracted_data.flatten()
@@ -910,10 +933,11 @@ class SpectrumPlot:
                     style=setting.line_style,
                     std=standard_deviation,
                     scatter=setting.scatter,
-                    time_plot=time_plot,
+                    single_wav=setting.single_wav,
                     interpolate=setting.interpolate,
                     num_others=len(plotting_settings) - 1,
                     use_grid=use_grid,
+                    normalized=normalize_factor != 1,
                 )
                 collide_graph = SpectrumPlot.data_to_plot(graphSettings, collide_graph)
 
@@ -930,32 +954,35 @@ class SpectrumPlot:
         titles = [
             (
                 # die Millisekunden entfernen, für kürzere Namen
-                f"{os.path.basename(tle_set.measurement_path).split('.')[0]}"
+                f"{os.path.basename(org_set.measurement_path).split('.')[0]}"
                 + (
-                    f"_g{tle_set.grad_start}_g{tle_set.grad_end}"
+                    f"_g{org_set.grad_start}_g{org_set.grad_end}"
                     if setting.grad_end > 1
                     else ""
                 )
                 + (
-                    f"_{round_left(tle_set.interval_start_time, tle_set.interval_end_time)}s_{round_right(tle_set.interval_start_time, tle_set.interval_end_time)}s"
-                    if tle_set.sliced
+                    f"_{round_left(changed_set.interval_start_time, changed_set.interval_end_time)}s_{round_right(changed_set.interval_start_time, changed_set.interval_end_time)}s"
+                    if org_set.sliced
                     else ""
                 )
-                + (f"_{tle_set.single_wav}" if setting.single_wav else "")
+                + (f"_{org_set.single_wav}" if setting.single_wav else "")
                 + (
-                    f"_z{tle_set.zoom_start_wav}_z{tle_set.zoom_end_wav}"
+                    f"_z{org_set.zoom_start_wav}_z{org_set.zoom_end_wav}"
                     if setting.zoomed
                     else ""
                 )
                 # # single wav (wird aber durch den Interval schon angegeben)
                 # + ("_sw" if setting.single_wav else "")
                 # integration normalized
-                + ("_in" if tle_set.normalize_integrationtime else "")
+                + ("_in" if org_set.normalize_integrationtime else "")
                 # power normalized
-                + ("_pn" if tle_set.normalize_power else "")
-                + ("_ip" if tle_set.interpolate else "")
+                + ("_pn" if org_set.normalize_data else "")
+                + ("_ip" if org_set.interpolate else "")
+                + ("_raw" if not org_set.smooth else "")
             )
-            for tle_set in plotting_settings
+            for org_set, changed_set in zip(
+                plotting_settings, changed_plotting_settings
+            )
         ]
 
         title = "__".join(titles)

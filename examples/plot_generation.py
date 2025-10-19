@@ -20,22 +20,33 @@ assert (plot_interpolate_only and dont_plot_interpolate) is False
 plot_time_slices = True
 
 # nur bestimmtes plotten. Leer ist disable (alles plotten). Enthält Keyword, welches in dem Namen sein muss.
-plot_list = []  # ["Gradiant", "Tageslicht", "Neutral"]
+# plot_list = [
+#     #  "Chlorophyll4HalbIsopropanol"
+# ]  # []  # ["Gradiant", "Tageslicht", "Neutral"]
+plot_list = [
+    # "Chlorophyll",
+    # "Chlorophyll2HalbIsopropanol",
+    "Chlorophyll3HalbIsopropanol",
+    "Chlorophyll4HalbIsopropanol",
+    # "Chlorophyll5HalbIsopropanol",
+]
+
+
 blacklist = False  # black- oder whitelist
 
 
-def sync_messungen_pics():
+def sync_messungen_pics(src_name="messungen", dest_name="messungen_pics"):
 
     # #!/bin/bash
-    # rm -r messungen_pics/
-    # # damit die Bilder die gleiche Struktur behalten
-    # rsync -av --exclude='*.npz' --exclude='*.json' messungen/ messungen_pics/
-    messungen_pics_path = Path("messungen_pics")
-    if messungen_pics_path.exists():
-        shutil.rmtree(messungen_pics_path)
+    # rm -r dest_name/
+    # # damit die Bilder die gleiche Struktur behalten (multiple exclude weil unabhängig von shell expansion sein)
+    # rsync -av --exclude='*.npy' --exclude='*.npz' --exclude='*.mp4' src_name/ dest_name/
+    destination = Path(dest_name)
+    if destination.exists():
+        shutil.rmtree(destination)
 
-    source = Path("messungen")
-    destination = Path("messungen_pics")
+    source = Path(src_name)
+    destination = Path(dest_name)
 
     for root, dirs, files in os.walk(source):
         rel_path = Path(root).relative_to(source)
@@ -43,7 +54,7 @@ def sync_messungen_pics():
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         for file in files:
-            if file.endswith(".npz") or file.endswith(".json"):
+            if file.endswith((".npy", ".npz", ".json", ".mp4")):
                 continue
 
             src_file = Path(root) / file
@@ -57,15 +68,14 @@ def make_plots(path, name):
     original_stdout = sys.stdout
     sys.stdout = io.StringIO()
 
-    # grüner Text (\033[ ist Escape sequence start, 32m Green color code, 4m underline, 0m color reset)
-    print(f"{path}:")
-    print("\033[32m\033[4m" + name + "\033[0m")
-
     p_settings = []
 
     measurement_path = os.path.join(path, name + ".npz")
     measurement_path_json = os.path.join(path, name + ".json")
     m_settings = MeasurementSettings.from_json(measurement_path_json)
+    print(f"{m_settings.TYPE}")
+    # grüner Text (\033[ ist Escape sequence start, 32m Green color code, 4m underline, 0m color reset)
+    print("\033[32m\033[4m" + name + "\033[0m")
 
     SpectrumPlot.plot_heatmap(measurement_path, m_settings, 0)
 
@@ -74,7 +84,8 @@ def make_plots(path, name):
         p_settings.append([PlotSettings(measurement_path, smooth=True)])
 
     # Fluoreszenz-Peak plotten (ca. zwischen 720 und 740 nm bei Chlorophyll)
-    if plot_fluo:
+    # ergibt nur Sinn, wenn es einigermaßen viele Datenpunkte gibt
+    if plot_fluo and m_settings.laser.REPETITIONS > 15:
         first_len = len(p_settings)
         p_settings.extend(
             (
@@ -103,17 +114,40 @@ def make_plots(path, name):
                     )
                 ],
                 [
-                    # PlottingSettings(
-                    #     path,
-                    #     name,
-                    #     smooth=True,
-                    #     single_wav=750,
-                    #     scatter=True,
-                    # ),
+                    PlotSettings(
+                        measurement_path,
+                        smooth=True,
+                        single_wav=520,
+                        scatter=True,
+                    ),
+                ],
+                [
                     PlotSettings(
                         measurement_path,
                         smooth=True,
                         single_wav=530,
+                        scatter=True,
+                    ),
+                ],
+                [
+                    PlotSettings(
+                        measurement_path,
+                        smooth=True,
+                        single_wav=540,
+                        scatter=True,
+                    ),
+                ],
+                [
+                    PlotSettings(
+                        measurement_path,
+                        smooth=True,
+                        single_wav=540,
+                        scatter=True,
+                    ),
+                    PlotSettings(
+                        measurement_path,
+                        smooth=True,
+                        single_wav=740,
                         scatter=True,
                     ),
                 ],
@@ -135,35 +169,40 @@ def make_plots(path, name):
 
     # # einzelne Zeitabschnitte plotten
     if plot_time_slices:
-        p_settings.append(
-            [
-                PlotSettings(
-                    measurement_path,
-                    smooth=True,
-                    interval_start=0,
-                    interval_end=1 / 3,
-                    scatter=False,
-                    line_style="-",
-                    color="black",
-                ),
-                PlotSettings(
-                    measurement_path,
-                    smooth=True,
-                    interval_start=1 / 3,
-                    interval_end=2 / 3,
-                    line_style="--",
-                    color="red",
-                ),
-                PlotSettings(
-                    measurement_path,
-                    smooth=True,
-                    interval_start=2 / 3,
-                    interval_end=3 / 3,
-                    line_style=":",
-                    color="blue",
-                ),
-            ]
-        )
+
+        def f(smooth):
+            p_settings.append(
+                [
+                    PlotSettings(
+                        measurement_path,
+                        smooth=smooth,
+                        interval_start=0,
+                        interval_end=1 / 3,
+                        scatter=False,
+                        line_style="-",
+                        color="black",
+                    ),
+                    PlotSettings(
+                        measurement_path,
+                        smooth=smooth,
+                        interval_start=1 / 3,
+                        interval_end=2 / 3,
+                        line_style="--",
+                        color="red",
+                    ),
+                    PlotSettings(
+                        measurement_path,
+                        smooth=smooth,
+                        interval_start=2 / 3,
+                        interval_end=3 / 3,
+                        line_style=":",
+                        color="blue",
+                    ),
+                ]
+            )
+
+        f(True)
+        f(False)
 
     for p in p_settings:
         SpectrumPlot.plot_results(p, m_settings, show_plots=False)
@@ -230,9 +269,10 @@ if __name__ == "__main__":
                 os.remove(os.path.join(path, pic_name + ".png"))
 
         # ob das Element in der white/blacklist ist
+        measurement_name = os.path.basename(os.path.dirname(path))
         if plot_list and (
-            (blacklist and any(ele in path for ele in plot_list))
-            or (not blacklist and any(ele not in path for ele in plot_list))
+            (blacklist and any(ele == measurement_name for ele in plot_list))
+            or (not blacklist and not any(ele == measurement_name for ele in plot_list))
         ):
             # print(f"skipping {path}")
             continue
@@ -265,7 +305,7 @@ if __name__ == "__main__":
 
     print(f"took: {time.time() - start_time:.2f} s")
 
-    # sync_messungen_pics()
+    sync_messungen_pics()
     # 12: took: 44.83 s
     # 8: took: 49.54 s
     # 4: took: 83.07 s

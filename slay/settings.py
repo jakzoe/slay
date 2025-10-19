@@ -246,7 +246,7 @@ class PlotSettings:
         interval_start=default_min,
         interval_end=default_max,
         normalize_integrationtime=False,
-        normalize_power=False,
+        normalize_data=False,
         color=None,
         line_style="-",
         scatter=False,
@@ -301,7 +301,7 @@ class PlotSettings:
         self.interval_end = self.default_max
 
         self.normalize_integrationtime = normalize_integrationtime
-        self.normalize_power = normalize_power
+        self.normalize_data = normalize_data
         self.color = color
         self.line_style = line_style
         self.scatter = scatter

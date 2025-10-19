@@ -35,12 +35,10 @@ RUN mkdir -p ${INSTALL_PATH}
 # PyGObject as an alternative to the larger matplotlib backend tkinter:
 RUN /usr/local/bin/pip3 install pyusb pyserial numpy matplotlib SciencePlots pylablib opencv-python appdirs
 # RUN apt-get -y install girepository-2.0
-RUN /usr/local/bin/pip3 install PyGObject==3.50.0
+RUN /usr/local/bin/pip3 install PyGObject==3.50.0 ipython ruptures
 # RUN apt-get -y install python3-gi
 # SciencePlots is able to use LaTeX (can be disabled using 'no-latex')
 RUN apt-get -y install dvipng texlive-latex-extra texlive-fonts-recommended cm-super
-
-RUN /usr/local/bin/pip3 install ipython
 
 COPY bin/stellarnet_driverLibs/ /usr/local/bin/stellarnet/driverLibs
 ENV PYTHONPATH="/usr/local/bin/stellarnet"
