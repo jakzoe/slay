@@ -26,11 +26,15 @@ plot_time_slices = True
 plot_list = [
     # "Chlorophyll",
     # "Chlorophyll2HalbIsopropanol",
-    "Chlorophyll3HalbIsopropanol",
-    "Chlorophyll4HalbIsopropanol",
+    # "Chlorophyll3HalbIsopropanol",
+    # "Chlorophyll4HalbIsopropanol",
     # "Chlorophyll5HalbIsopropanol",
+    # "Wasser",
 ]
 
+root_dir = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "messungen_removed/"
+)
 
 blacklist = False  # black- oder whitelist
 
@@ -78,6 +82,7 @@ def make_plots(path, name):
     print("\033[32m\033[4m" + name + "\033[0m")
 
     SpectrumPlot.plot_heatmap(measurement_path, m_settings, 0)
+    return
 
     # Generellen Durchschnitt plotten
     if plot_general:
@@ -245,11 +250,11 @@ if __name__ == "__main__":
     #         print("plots dir was already deleted")
 
     paths = []
-    # root = "messungen/"
-    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "messungen/")
-    for dir in os.listdir(root):
-        for subdir in os.listdir(os.path.join(root, dir)):
-            paths.append(os.path.join(root, dir, subdir))
+
+    for dir in os.listdir(root_dir):
+        paths.append(os.path.join(root_dir, dir))
+        # for subdir in os.listdir(os.path.join(root, dir)):
+        #     paths.append(os.path.join(root, dir, subdir))
 
     tasks = []
 
@@ -269,7 +274,7 @@ if __name__ == "__main__":
                 os.remove(os.path.join(path, pic_name + ".png"))
 
         # ob das Element in der white/blacklist ist
-        measurement_name = os.path.basename(os.path.dirname(path))
+        measurement_name = os.path.basename(path)
         if plot_list and (
             (blacklist and any(ele == measurement_name for ele in plot_list))
             or (not blacklist and not any(ele == measurement_name for ele in plot_list))

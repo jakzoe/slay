@@ -8,11 +8,9 @@ __pycache__/
 bin/
 docs/
 debug/
-Grab alter Messungen/
 plots/
 messungen_pics/
-messungen/
-bilder-der-messung/
+messungen*/
 # stellarnet drivers
 secrets.txt
 

@@ -382,8 +382,10 @@ class SpectrumPlot:
             )
 
         settings.ax.set_ylim(
-            min(min(line_data), settings.ax.get_ylim()[0]),
-            max(
+            min(  # pylint: disable=nested-min-max
+                min(line_data), settings.ax.get_ylim()[0]
+            ),
+            max(  # pylint: disable=nested-min-max
                 max(line_data),
                 0 if settings.normalized else 2000,
                 settings.ax.get_ylim()[1],
@@ -470,6 +472,39 @@ class SpectrumPlot:
             return False
 
     @staticmethod
+    def replace_outliers_with_neighbors(
+        spectrometer_data_gradient: np.ndarray, outlier_indices
+    ):
+
+        corrected_data = spectrometer_data_gradient.copy()
+
+        for g_idx, gradient in enumerate(corrected_data):
+            for m_idx, measurement in enumerate(gradient):
+                for idx in outlier_indices:
+                    left = idx
+                    right = idx
+
+                    while left > 0 and left in outlier_indices:
+                        left -= 1
+                    while right < len(measurement) - 1 and right in outlier_indices:
+                        right += 1
+
+                    corrected_data[g_idx][m_idx][idx] = np.mean(
+                        (measurement[left], measurement[right])
+                    )
+
+        return corrected_data
+
+    @staticmethod
+    def get_outlier_indices(spectrometer_data_gradient: np.ndarray, threshold=10):
+        z_scores = np.abs(scipy.stats.zscore(spectrometer_data_gradient, axis=-1))
+        outlier_mask = z_scores > threshold
+        # letzte Dimension, da es hier ignoriert werden soll, in welchem Gradienten/in welcher Messung der Outlier auftrat
+        # (es wird angenommen, dass dies dann ein genereller Defekt in allen Messungen ist, der an dem Spektrometer liegt)
+        outlier_indices = np.argwhere(outlier_mask)[:, -1]
+        return np.unique(outlier_indices).tolist()
+
+    @staticmethod
     def measurement_from_disk(
         measurement_path: str,
         measurement_settings: MeasurementSettings,
@@ -479,6 +514,15 @@ class SpectrumPlot:
 
         loaded_array = np.load(measurement_path)
         spectrometer_data_gradient = loaded_array["arr_0"]
+        # outlier_indices = SpectrumPlot.get_outlier_indices(
+        #     spectrometer_data_gradient, threshold=9
+        # )
+        # Ergebnis für mein Spektrometer bei einer neutralen Messung:
+        outlier_indices = [493, 581, 1614, 1615]
+
+        spectrometer_data_gradient = SpectrumPlot.replace_outliers_with_neighbors(
+            spectrometer_data_gradient, outlier_indices
+        )
         # die Wellenlängen des Spektrometers
         x_data = loaded_array["arr_1"]
         time_stamps_gradient = loaded_array["arr_2"]

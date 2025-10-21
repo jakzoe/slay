@@ -133,9 +133,6 @@ class Measurement:
         )
         # Speicherort definieren
         measurement_type = "DEBUG" if self.DEBUG else self.MEASUREMENT_SETTINGS.TYPE
-        measurement_type += (
-            "/Kontinuierlich" if self.MEASUREMENT_SETTINGS.laser.CONTINOUS else "/Puls"
-        )
 
         self.measurement_save_dir = os.path.join(measurements_dir, measurement_type)
         # manche Dateisysteme unterstützen keinen Doppelpunkt im Dateinamen
