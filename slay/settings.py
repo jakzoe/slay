@@ -1,5 +1,6 @@
 # prinzipiell hätte das Package "dataclasses-json" mehr Optionen
 from dataclasses import dataclass, asdict, fields
+from typing import Union
 import json
 import ast
 import numpy as np
@@ -9,11 +10,16 @@ import sys
 @dataclass
 class MeasurementSettings:
     @dataclass
-    class SpectoSettings:
+    class StellarnetSpectoSettings:
         INTTIME: int
         SCAN_AVG: int
         SMOOTH: int
         XTIMING: int
+
+    @dataclass
+    class ThorlabsSpectoSettings:
+        INTTIME: int
+        SCAN_AVG: int
         AMPLIFICATION: bool = False
 
     @dataclass
@@ -173,7 +179,7 @@ class MeasurementSettings:
     )
     TIMEOUT: int  # Sekunden, nach denen die Messung, unabhängig von REPETITIONS, beendet werden soll
     WATCHDOG_GRACE: int  # besteht für eine bestimmte Zeit keine Kommunikation zwischen Arduino und Software: Abbruch
-    specto: SpectoSettings
+    specto: Union[StellarnetSpectoSettings, ThorlabsSpectoSettings]
     laser: LaserSettings
     FILLING_QUANTITY: int = (
         0  # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0
@@ -202,10 +208,15 @@ class MeasurementSettings:
 
         def from_dict(cls, dict_data):
             if cls == MeasurementSettings:
+                specto_dict = dict_data.pop("specto")
+                # nicht sooo stable (eventuell spectro name parameter einführen), aber: SMOOTH/XTIMING gibt es nur bei stellarnet
+                specto_cls = (
+                    MeasurementSettings.StellarnetSpectoSettings
+                    if "SMOOTH" in specto_dict
+                    else MeasurementSettings.ThorlabsSpectoSettings
+                )
                 return cls(
-                    specto=from_dict(
-                        MeasurementSettings.SpectoSettings, dict_data.pop("specto")
-                    ),
+                    specto=from_dict(specto_cls, specto_dict),
                     laser=from_dict(
                         MeasurementSettings.LaserSettings, dict_data.pop("laser")
                     ),

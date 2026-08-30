@@ -9,8 +9,17 @@ from slay.camera import USBCamera
 from slay.live_plotter import LivePlotter
 from slay.backup_service import BackupService
 
+import multiprocessing
 from multiprocessing import Process
 from threading import Thread, Event
+
+# Python 3.14 switched the default start method on Linux to "forkserver". This requires pickling the Process target.
+# That fails because ThorlabsSpectrometer holds unpicklable C-extension handles (e.g. thorlabs_cct) though,
+# so this would fail when not setting the method to fork.
+try:
+    multiprocessing.set_start_method("fork")
+except RuntimeError:
+    pass
 import concurrent.futures
 import traceback
 import serial
@@ -20,6 +29,7 @@ import time
 import datetime
 import numpy as np
 from appdirs import user_cache_dir
+
 
 np.set_printoptions(suppress=True)
 
@@ -71,27 +81,29 @@ class Measurement:
         measurements_dir: str,
     ):
 
+        specto = MEASUREMENT_SETTINGS.specto
         try:
-
-            if not self.is_docker():
-                raise RuntimeError("Not running in a docker container.")
-            # from stellarnet.stellarnet_driverLibs import stellarnet_driver3 as sn
-            from driverLibs import stellarnet_driver3 as sn  # type: ignore
-
-            # print(sn.version())
+            if isinstance(specto, MeasurementSettings.StellarnetSpectoSettings):
+                if not self.is_docker():
+                    raise RuntimeError("Not running in a docker container.")
+                from slay.stellarnet import StellarnetSpectrometer as SpectrometerDriver
+            elif isinstance(specto, MeasurementSettings.ThorlabsSpectoSettings):
+                from slay.thorlabs import ThorlabsSpectrometer as SpectrometerDriver
+            else:
+                raise ValueError(f"Unknown spectrometer settings type: {type(specto)}")
 
             DEBUG = False
         except Exception:
-            print("\n Failed to load the stellarnet library.\n")
+            print(f"\n Failed to load the spectrometer driver for {type(specto).__name__}.\n")
             print(traceback.format_exc())
 
             # exit()
             print("Running in debug-mode.\n")
-            from slay.virtual import Spectrometer as sn
+            from slay.virtual import Spectrometer as SpectrometerDriver
 
             DEBUG = True
 
-        self.sn = sn
+        self.spectrometer_driver = SpectrometerDriver
         self.DEBUG = DEBUG
 
         self.MEASUREMENT_SETTINGS = MEASUREMENT_SETTINGS
@@ -271,12 +283,9 @@ class Measurement:
         except serial.serialutil.SerialException as e:
             print(f"Failed to connect to the MCU: {e}")
             print("You may have to unplug and replug the MCU.")
-            raise e
+            #raise e
 
-            class MCU:
-                def write(self, value):
-                    pass
-
+            from slay.virtual import MCU
             self.mcu = MCU()
 
     def set_firmware_variable(self, name, value):
@@ -323,34 +332,8 @@ class Measurement:
             "Connecting to the spectrometer. Thus getting a first measurement, this might take a while....",
             flush=True,
         )
-        self.spectrometer = self.sn.array_get_spec_only(0)
-
-        # es gibt 2048 Elemente:
-        # Jede der 864 Wellenlängen ist immer mit zwei bis drei Nachkommastellen vertreten
-        # print(wav[0], wav[-1]) -> 285.24 1149.4808101739814
-        # for i in wav:
-        #     print(i)
-        # print(len(wav))
-
-        # print(spectrometer)
-        # print("\nDevice ID: ", sn.getDeviceId(spectrometer))
-
-        # stellarnet_driver3.TimeoutError: Read spectrum
-        # aber wir haben doch auch kein externes Triggern aktiviert? Also unser Spektrometer
-        # hat das Modul einfach nicht...ist USB "externes Triggern"?
-        # self.sn.ext_trig(self.spectrometer, False)
-        self.sn.ext_trig(self.spectrometer, True)
-
-        # True ignoriert die ersten Messdaten, da diese ungenau sein können
-        # (durch Änderung der Integrationszeit)
-        self.sn.setParam(
-            self.spectrometer,
-            self.MEASUREMENT_SETTINGS.specto.INTTIME,
-            self.MEASUREMENT_SETTINGS.specto.SCAN_AVG,
-            self.MEASUREMENT_SETTINGS.specto.SMOOTH,
-            self.MEASUREMENT_SETTINGS.specto.XTIMING,
-            True,
-        )
+        self.spectrometer = self.spectrometer_driver(0)
+        self.spectrometer.configure(self.MEASUREMENT_SETTINGS.specto)
 
     def init_nkt(self, nkt_path):
         self.nkt = NKT(nkt_path)
@@ -370,24 +353,11 @@ class Measurement:
             print(e)
 
     def get_wav(self):
-        return self.sn.getSpectrum_X(self.spectrometer).reshape(
-            2048,
-        )
+        return self.spectrometer.get_wavelengths()
 
     def get_data(self):
         """Liest die Daten des Spektrometers aus."""
-
-        # print(threading.current_thread() == threading.main_thread())
-
-        # start_time = time.time()
-        # var = sn.array_spectrum(spectrometer, wav)
-        # print((time.time() - start_time) * 1000)
-        # return var
-        # print(sn.array_spectrum(spectrometer, wav).shape)  # (2048, 2)
-        # print(sn.getSpectrum_Y(spectrometer).shape)  # (2048,)
-
-        # return sn.array_spectrum(spectrometer, wav)
-        return self.sn.getSpectrum_Y(self.spectrometer)
+        return self.spectrometer.measure()
 
     def led_red(self):
         self.set_firmware_variable("SetLED", 511)
@@ -405,7 +375,7 @@ class Measurement:
         # internal trigger
         self.nkt.set_register("operating_mode", 0)
         # Spektrometer freigeben
-        self.sn.reset(self.spectrometer)
+        self.spectrometer.close()
         self.led_green()
 
         self.ltb.ser.close()
@@ -496,17 +466,17 @@ class Measurement:
             flush=True,
         )
 
-    def mcu_watchdog(self):
-        while True:
+    def mcu_watchdog(self, stop_event=None):
+        while stop_event is None or not stop_event.is_set():
             self.send_firmware_signal("3")
             time.sleep(
                 self.MEASUREMENT_SETTINGS.specto.INTTIME / 1000.0
                 + self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000.0
             )
 
-    def ltb_watchdog(self):
+    def ltb_watchdog(self, stop_event=None):
         """Docs: If there is no communication between the laser and the computer for more than 30 seconds, the laser will be switched into the standby mode."""
-        while True:
+        while stop_event is None or not stop_event.is_set():
             status = self.ltb.get_version_info()
             # print(f"LTB status: {status}", flush=True)
             # if "WARNING" in status:
@@ -599,7 +569,7 @@ class Measurement:
                     self.messdata.curr_measurement_index = next_measurement_index
             except KeyboardInterrupt:
                 self.live_plotter.stop()
-                self.sn.reset(self.spectrometer)
+                self.spectrometer.close()
                 self.stop_all_devices()
 
         def watchdog_wrap(watchdog_target, func, timeout_sec=3):
@@ -636,12 +606,21 @@ class Measurement:
 
         print("staring a measurement", flush=True)
 
-        ltb_p = Process(
+        # Use Threads instead of Processes: Thorlabs's .NET/pythonnet runtime is already loaded due to init_spectrometer, and CoreCLR
+        # does not support being forked - forking here (even when not touching the spectrometer at all) corrupts method
+        # binding for anything the spectrometer driver hasn't already been asked to do.
+        # Thus, when later calling back to it via stop_all_devices() we would get "'MethodObject' object is not
+        # callable".
+        ltb_stop = Event()
+        mcu_stop = Event()
+        ltb_p = Thread(
             target=self.ltb_watchdog,
+            args=(ltb_stop,),
             daemon=True,
         )
-        mcu_p = Process(
+        mcu_p = Thread(
             target=self.mcu_watchdog,
+            args=(mcu_stop,),
             daemon=True,
         )
 
@@ -679,17 +658,14 @@ class Measurement:
             # time.sleep(1000)
         except KeyboardInterrupt:
             print("Interrupted! Shutting down.")
-            # müsste den gleichen Effekt wie .terminate haben, da keine anderen Signalhandler konfiguriert sind
-            ltb_p.kill()
-            mcu_p.kill()
-            # measure_p.kill()
+            ltb_stop.set()
+            mcu_stop.set()
 
         if self.cam.process.is_alive():
             self.cam.stop()
 
-        ltb_p.terminate()
-        mcu_p.terminate()
-        # measure_p.terminate()
+        ltb_stop.set()
+        mcu_stop.set()
 
         self.stop_all_devices()
 

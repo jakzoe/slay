@@ -154,7 +154,9 @@ class SpectrumPlot:
             return False
 
         def smooth_curve(array):
-            return scipy.signal.savgol_filter(array, window_length=50, polyorder=5)
+            # bad for peaks (suddenly getting negative values on the edges etc., not preserving the shape that well anyway)
+            # return scipy.signal.savgol_filter(array, window_length=50, polyorder=5)
+            return scipy.ndimage.gaussian_filter1d(array, sigma=3)
 
         line_data = (
             smooth_curve(settings.y_data)

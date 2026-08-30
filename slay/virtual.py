@@ -209,44 +209,25 @@ class NKT:
     def close(self):
         pass
 
-
+class MCU:
+    def write(self, value):
+        pass
+    def close(self):
+        pass
+                
 class Spectrometer:
-    # spectrometer, wav = sn.array_get_spec(0)
-    def array_get_spec(self, *args, **kwargs):
-        time.sleep(0.5)
-        return None, self.array_get_spec_only()
 
-    def array_get_spec_only(self, *args, **kwargs):
-        return None
-
-    def getSpectrum_X(self, *args, **kwargs):
-        return np.sort(np.abs(np.random.rand(2048, 1) * 1000), axis=0)
-
-    # sn.getDeviceId(spectrometer))
-    def getDeviceId(self, *args, **kwargs):
-        return -1
-
-    # sn.ext_trig(spectrometer, True)
-    def ext_trig(self, *args, **kwargs):
+    def __init__(self, index):
         pass
 
-    # sn.setParam(spectrometer, INTTIME, SCAN_AVG, SMOOTH, XTIMING, True)
-    def setParam(self, *args, **kwargs):
+    def configure(self, specto_settings):
         pass
 
-    # var = sn.array_spectrum(spectrometer, wav)
-    def array_spectrum(self, *args, **kwargs):
-        return np.random.rand(2048, 2) * 100
+    def get_wavelengths(self):
+        # es gibt 2048 Elemente (wav[0], wav[-1] -> 285.24, 1149.48... beim echten Spektrometer)
+        return np.sort(np.abs(np.random.rand(2048)) * 1000)
 
-    # var = sn.getSpectrum_Y(spectrometer)
-    def getSpectrum_Y(self, *args, **kwargs):
-        # return np.abs(
-        #     np.random.rand(
-        #         2048,
-        #     )
-        #     * 100
-        # )
-
+    def measure(self):
         # Gauß:
         time.sleep(0.5)
         mu = 0
@@ -259,6 +240,5 @@ class Spectrometer:
             * 2000
         )
 
-    # sn.reset(spectrometer)
-    def reset(self, *args, **kwargs):
+    def close(self):
         pass

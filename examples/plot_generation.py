@@ -30,11 +30,10 @@ plot_list = [
     # "Chlorophyll4HalbIsopropanol",
     # "Chlorophyll5HalbIsopropanol",
     # "Wasser",
+    # "Tonic",
 ]
 
-root_dir = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "messungen_removed/"
-)
+root_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "messungen/")
 
 blacklist = False  # black- oder whitelist
 
@@ -82,7 +81,7 @@ def make_plots(path, name):
     print("\033[32m\033[4m" + name + "\033[0m")
 
     SpectrumPlot.plot_heatmap(measurement_path, m_settings, 0)
-    return
+    # return
 
     # Generellen Durchschnitt plotten
     if plot_general:
@@ -287,11 +286,11 @@ if __name__ == "__main__":
 
     # print(tasks)
     # exit()
-    for task in tasks:
-        make_plots(*task)
+    # for task in tasks:
+    #     make_plots(*task)
 
-    print("generated plots!", flush=True)
-    exit()
+    # print("generated plots!", flush=True)
+    # exit()
 
     # lambda geht nicht...
     def worker(args):

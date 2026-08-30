@@ -47,22 +47,27 @@ if __name__ == "__main__":
 
     measurement_settings = MeasurementSettings(
         UNIQUE=False,
-        TYPE="Chlorophyll5HalbIsopropanol",
+        TYPE="ThorlabsTest",
         CUVETTE_WINDOWS=4,
         TIMEOUT=1000000,  # disable
         WATCHDOG_GRACE=200,
         FILLING_QUANTITY=5 * 800,  # in ml
         OXYGEN_SPEED=-1,  # 50 cm^3 / min
-        specto=MeasurementSettings.SpectoSettings(
+        # specto=MeasurementSettings.StellarnetSpectoSettings(
+        #     # 1-498_000 ms
+        #     INTTIME=10_000,  # 10000 # int(1000 * 60 * 0.5),
+        #     SCAN_AVG=1,
+        #     SMOOTH=0,
+        #     XTIMING=3,
+        # ),
+        specto=MeasurementSettings.ThorlabsSpectoSettings(
             # 1-498_000 ms
-            INTTIME=10_000,  # 10000 # int(1000 * 60 * 0.5),
+            INTTIME=2_000,  # 10000 # int(1000 * 60 * 0.5),
             SCAN_AVG=1,
-            SMOOTH=0,
-            XTIMING=3,
-            AMPLIFICATION=False,
+            AMPLIFICATION=False
         ),
         laser=MeasurementSettings.LaserSettings(
-            REPETITIONS=50,
+            REPETITIONS=2,
             MEASUREMENT_DELAY=3,
             IRRADITION_TIME=3,
             SERIAL_DELAY=3,
