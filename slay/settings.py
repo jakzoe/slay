@@ -41,7 +41,7 @@ class MeasurementSettings:
         ND_NKT: int  # ND-Wert des Filters, der dazwischen ist
         ND_405: int
         ND_445: int
-        CONTINOUS: bool  # Laser durchgängig angeschaltet lassen oder nicht
+        CONTINUOUS: bool  # Laser durchgängig angeschaltet lassen oder nicht
         # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0. Range 0 bis 100
         INTENSITY_LTB: str = "0"
         # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0. Range 0 bis 60
@@ -188,7 +188,7 @@ class MeasurementSettings:
 
     def __post_init__(self):
         # in ms, Abschätzung
-        if self.laser.CONTINOUS:
+        if self.laser.CONTINUOUS:
             self.measurement_time = self.specto.INTTIME + self.laser.MEASUREMENT_DELAY
         else:
             self.measurement_time = (

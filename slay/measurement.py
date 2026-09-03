@@ -10,7 +10,6 @@ from slay.live_plotter import LivePlotter
 from slay.backup_service import BackupService
 
 import multiprocessing
-from multiprocessing import Process
 from threading import Thread, Event, Lock
 
 # Python 3.14 switched the default start method on Linux to "forkserver". This requires pickling the Process target.
@@ -207,7 +206,7 @@ class Measurement:
         )
 
         self.set_firmware_variable(
-            "ConMea", int(self.MEASUREMENT_SETTINGS.laser.CONTINOUS)
+            "ConMea", int(self.MEASUREMENT_SETTINGS.laser.CONTINUOUS)
         )
 
         self.set_firmware_variable(
@@ -217,7 +216,7 @@ class Measurement:
                 + (
                     self.MEASUREMENT_SETTINGS.laser.IRRADITION_TIME
                     + self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY * 2
-                    if not self.MEASUREMENT_SETTINGS.laser.CONTINOUS
+                    if not self.MEASUREMENT_SETTINGS.laser.CONTINUOUS
                     else 0
                 )
                 + self.MEASUREMENT_SETTINGS.specto.INTTIME
@@ -232,7 +231,7 @@ class Measurement:
                 + (
                     self.MEASUREMENT_SETTINGS.laser.IRRADITION_TIME
                     + self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY * 2
-                    if not self.MEASUREMENT_SETTINGS.laser.CONTINOUS
+                    if not self.MEASUREMENT_SETTINGS.laser.CONTINUOUS
                     else 0
                 )
                 + self.MEASUREMENT_SETTINGS.specto.INTTIME
@@ -448,7 +447,7 @@ class Measurement:
 
         total_time_millis = int(round(time.time() * 1000)) - int(round(seconds * 1000))
         print(f"measurements took: {total_time_millis} ms")
-        if not self.MEASUREMENT_SETTINGS.laser.CONTINOUS:
+        if not self.MEASUREMENT_SETTINGS.laser.CONTINUOUS:
             delays_time = (
                 self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY
                 + 2 * self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY
@@ -538,63 +537,6 @@ class Measurement:
         self.nkt.set_register("emission", 1)
         self.time_measurement(measure)
 
-    def infinite_measuring(self, gui=True, nkt_on=True):
-        if nkt_on:
-            self.nkt.set_register("operating_mode", 0)  # internal trigger
-            self.nkt.set_register("emission", 1)
-
-        # def send_and_wait():
-        #     while True:
-        #         self.send_firmware_signal("3")
-        #         time.sleep(
-        #             self.MEASUREMENT_SETTINGS.specto.INTTIME / 1000.0
-        #             + self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000.0
-        #         )
-        #         data = self.mcu.read(self.mcu.inWaiting())
-        #         if data != b"":
-        #             print(
-        #                 "in waiting: " + str(data),
-        #                 flush=True,
-        #             )  # flushInput()
-
-        def infinite_measure():
-            self.turn_on_laser()
-
-            if gui:
-                self.enable_gui()
-            try:
-                while True:
-                    next_measurement_index = (
-                        self.messdata.curr_measurement_index + 1
-                    ) % len(self.messdata.measurements[self.messdata.curr_gradiant])
-                    self.messdata.measurements[self.messdata.curr_gradiant][
-                        next_measurement_index
-                    ] = self.get_data()
-                    time.sleep(
-                        self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000.0
-                    )
-                    self.messdata.curr_measurement_index = next_measurement_index
-            except KeyboardInterrupt:
-                self.live_plotter.stop()
-                self.spectrometer.close()
-                self.stop_all_devices()
-
-        def watchdog_wrap(watchdog_target, func, timeout_sec=3):
-            p = Process(
-                target=watchdog_target,
-                daemon=True,
-            )
-            p.start()
-
-            func()
-
-            p.terminate()
-            p.join(timeout=timeout_sec)
-            if p.is_alive():
-                p.kill()
-
-        watchdog_wrap(self.mcu_watchdog, infinite_measure)
-
     def _measure_task(self):
         for self.messdata.curr_gradiant in range(
             self.MEASUREMENT_SETTINGS.laser.num_gradiants
@@ -602,7 +544,7 @@ class Measurement:
 
             self.set_laser_powers(self.messdata.curr_gradiant)
 
-            if self.MEASUREMENT_SETTINGS.laser.CONTINOUS:
+            if self.MEASUREMENT_SETTINGS.laser.CONTINUOUS:
                 self.continuous_measurement()
             else:
                 self.pulse_measurement()
@@ -647,7 +589,7 @@ class Measurement:
             print("started cam", flush=True)
             if self.MEASUREMENT_SETTINGS.UNIQUE:
                 backup_p.start()
-            if self.MEASUREMENT_SETTINGS.laser.CONTINOUS:
+            if self.MEASUREMENT_SETTINGS.laser.CONTINUOUS:
                 mcu_p.start()
             print("staring a measurement process", flush=True)
             measure_p.start()
@@ -661,20 +603,17 @@ class Measurement:
                     self.messdata,
                 )
 
-            # print("sleeping", flush=True)
-            # time.sleep(1000)
+            measure_p.join()
         except KeyboardInterrupt:
             print("Interrupted! Shutting down.")
+        finally:
             ltb_stop.set()
             mcu_stop.set()
 
-        if self.cam.process.is_alive():
-            self.cam.stop()
+            if self.cam.process.is_alive():
+                self.cam.stop()
 
-        ltb_stop.set()
-        mcu_stop.set()
-
-        self.stop_all_devices()
+            self.stop_all_devices()
 
     def save(self, plt_only=False, measurements_only=False, cache_path: str = ""):
         """Schreibt die Messdaten in einen spezifizierten Ordner."""
@@ -707,7 +646,7 @@ class Measurement:
             # metadata[5] = self.MEASUREMENT_SETTINGS["laser"]["REPETITIONS"]
             # metadata[6] = self.MEASUREMENT_SETTINGS["ARDUINO_DELAY"]
             # metadata[7] = self.MEASUREMENT_SETTINGS["IRRADITION_TIME"]
-            # metadata[8] = int(self.MEASUREMENT_SETTINGS["laser"]["CONTINOUS"])
+            # metadata[8] = int(self.MEASUREMENT_SETTINGS["laser"]["CONTINUOUS"])
 
             np.savez_compressed(
                 os.path.join(save_dir, self.measurement_file_name),

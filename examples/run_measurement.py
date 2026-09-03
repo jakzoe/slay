@@ -85,7 +85,7 @@ if __name__ == "__main__":
             ND_NKT=0,
             ND_405=0,
             ND_445=0,
-            CONTINOUS=True,
+            CONTINUOUS=True,
             FOCUS_DIST=0,
         ),
     )
