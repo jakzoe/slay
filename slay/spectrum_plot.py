@@ -1051,7 +1051,7 @@ class SpectrumPlot:
                     break
                 except KeyboardInterrupt:
                     raise
-                except:
+                except Exception:
                     continue
             # plt.ion()
 

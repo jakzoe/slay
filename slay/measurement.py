@@ -371,22 +371,40 @@ class Measurement:
     def led_green(self):
         self.set_firmware_variable("SetLED", 151)
 
-    def stop_all_devices(self):
-        # emission 0 gibt einen Fehler, wenn external gate weiterhin "LASER AN!!!!" schreit
-        self.turn_off_laser()
-        self.ltb.stop_operation()
-        self.nkt.set_register("emission", 0)
-        # manuelles triggern erlauben und (vorsichtshalber) die power runterstellen.
-        self.nkt.set_register("power", 1)
-        # internal trigger
-        self.nkt.set_register("operating_mode", 0)
-        # Spektrometer freigeben
-        self.spectrometer.close()
-        self.led_green()
+    def _try_stop_step(self, description, func):
+        try:
+            func()
+        except Exception as e:
+            print(f"stop_all_devices: '{description}' failed: {e}", flush=True)
 
-        self.ltb.ser.close()
-        self.nkt.laser.close()
-        self.mcu.close()
+    def stop_all_devices(self):
+
+        # emission 0 gibt einen Fehler, wenn das external gate weiterhin on ist
+        self._try_stop_step("turn_off_laser", self.turn_off_laser)
+        self._try_stop_step("ltb.stop_operation", self.ltb.stop_operation)
+        self._try_stop_step(
+            "nkt emission off", lambda: self.nkt.set_register("emission", 0)
+        )
+        # manuelles triggern erlauben und (vorsichtshalber) die power runterstellen.
+        self._try_stop_step(
+            "nkt power down", lambda: self.nkt.set_register("power", 1)
+        )
+        # internal trigger
+        self._try_stop_step(
+            "nkt internal trigger", lambda: self.nkt.set_register("operating_mode", 0)
+        )
+        # Spektrometer freigeben
+        self._try_stop_step("spectrometer.close", self.spectrometer.close)
+        self._try_stop_step("led_green", self.led_green)
+
+        self._try_stop_step("ltb.close", self.ltb.close)
+        self._try_stop_step("nkt.laser.close", self.nkt.laser.close)
+
+        def close_mcu():
+            with self.mcu_lock:
+                self.mcu.close()
+
+        self._try_stop_step("mcu.close", close_mcu)
 
     def test_measurement_duration(self, iters: int):
         """Misst die Zeit, die ein Messvorgang dauert."""
@@ -609,6 +627,15 @@ class Measurement:
         finally:
             ltb_stop.set()
             mcu_stop.set()
+
+            if ltb_p.ident is not None:
+                ltb_p.join(timeout=10)
+                if ltb_p.is_alive():
+                    print("ltb_watchdog did not stop in time!", flush=True)
+            if mcu_p.ident is not None:
+                mcu_p.join(timeout=10)
+                if mcu_p.is_alive():
+                    print("mcu_watchdog did not stop in time!", flush=True)
 
             if self.cam.process.is_alive():
                 self.cam.stop()

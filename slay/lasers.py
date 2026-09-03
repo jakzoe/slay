@@ -442,7 +442,8 @@ class LTB:
                 self.turn_laser_off()
             except LaserError:
                 pass
-            self.ser.close()
+            with self._ser_lock:
+                self.ser.close()
 
     def __enter__(self):
         return self

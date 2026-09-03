@@ -33,7 +33,7 @@ class TestReadSettings(unittest.TestCase):
                 ND_NKT=0,
                 ND_405=1,
                 ND_445=2,
-                CONTINOUS=False,
+                CONTINUOUS=False,
             ),
             FILLING_QUANTITY=0,
         )
@@ -57,7 +57,7 @@ class TestReadSettings(unittest.TestCase):
                 "ND_NKT": 0,
                 "ND_405": 1,
                 "ND_445": 2,
-                "CONTINOUS": False,
+                "CONTINUOUS": False,
             },
             "FILLING_QUANTITY": 0,
         }

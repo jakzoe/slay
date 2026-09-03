@@ -92,6 +92,8 @@ class MeasurementSettings:
                         and n.func.value.id == "np"
                         and n.func.attr in allowed_funcs
                     ):
+                        if n.keywords:
+                            raise ValueError("Keyword arguments are not allowed.")
                         for arg in n.args:
                             if not isinstance(arg, ast.Constant) or not isinstance(
                                 arg.value, (int, float)
