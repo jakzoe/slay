@@ -11,7 +11,7 @@ from slay.backup_service import BackupService
 
 import multiprocessing
 from multiprocessing import Process
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 
 # Python 3.14 switched the default start method on Linux to "forkserver". This requires pickling the Process target.
 # That fails because ThorlabsSpectrometer holds unpicklable C-extension handles (e.g. thorlabs_cct) though,
@@ -124,6 +124,9 @@ class Measurement:
             futures = [executor.submit(func, *args) for func, args in init_tasks]
             for future in concurrent.futures.as_completed(futures):
                 result = future.result()
+
+        # wird von mehreren Threads genutzt, daher lock
+        self.mcu_lock = Lock()
 
         # self.init_spectrometer()
         # self.init_mcu(serial_path, wait=3)
@@ -308,22 +311,26 @@ class Measurement:
             )
         print(f"sending: 2{name}={value}")
         # 2 ist der Char-Code für "Variable setzen" (siehe Firmware-Code)
-        self.mcu.write(f"2{name}={value}\n".encode())
-        time.sleep(self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY / 1000.0)
+        with self.mcu_lock:
+            self.mcu.write(f"2{name}={value}\n".encode())
+            time.sleep(self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY / 1000.0)
 
     def send_firmware_signal(self, signal):
-        self.mcu.write(str(signal).encode())
-        time.sleep(self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY / 1000.0)
+        with self.mcu_lock:
+            self.mcu.write(str(signal).encode())
+            time.sleep(self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY / 1000.0)
 
     def turn_on_laser(self):
         """Sendet eine Eins als Byte zum MCU, welche ein Anschalten der Laser signalisiert."""
-        self.mcu.write(b"1")
-        time.sleep(self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY / 1000.0)
+        with self.mcu_lock:
+            self.mcu.write(b"1")
+            time.sleep(self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY / 1000.0)
 
     def turn_off_laser(self):
         """Sendet eine Null als Byte zum MCU, welche ein Ausschalten der Laser signalisiert."""
-        self.mcu.write(b"0")
-        time.sleep(self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY / 1000.0)
+        with self.mcu_lock:
+            self.mcu.write(b"0")
+            time.sleep(self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY / 1000.0)
 
     def init_spectrometer(self):
         """Verbindet sich mit dem Spektrometer."""

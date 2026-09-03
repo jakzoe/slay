@@ -6,6 +6,7 @@ Prinzipiell habe ich alles getestet und Fehler korrigiert.
 import serial
 import time
 import sys
+import threading
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 from enum import IntFlag
@@ -126,6 +127,8 @@ class LTB:
                 stopbits=serial.STOPBITS_ONE,
                 parity=serial.PARITY_NONE,
             )
+            # wird von mehreren Threads genutzt, daher lock
+            instance._ser_lock = threading.Lock()
             return instance
         except serial.SerialException:
             print("using virtual LTB LASER")
@@ -157,30 +160,31 @@ class LTB:
     def _send_command(
         self, req_data_unit: str, expect_reply: bool = False, retries: int = 3
     ) -> dict:
-        for attempt in range(retries):
-            try:
-                telegram = self._construct_request(req_data_unit)
-                self.ser.write(telegram.encode("ascii"))
-                response = self.ser.read_until(self.EC.encode()).decode("ascii")
-                if not response:
-                    raise LaserProtocolError("No response received from laser")
-                if response == self.EC and not expect_reply:
-                    return {"status": "ACK"}
-                if not self._verify_fcs(response):
-                    raise LaserProtocolError("Invalid checksum in response")
-                return self._parse_response(response)
-            except LaserProtocolError as e:
-                if attempt < retries - 1:
-                    if "Forbidden" in str(e):
-                        time.sleep(2)
-                    ts = time.strftime("%Y-%m-%d %H:%M:%S")
-                    print(
-                        f"{ts} - WARNING - Retrying command {req_data_unit}... Attempt {attempt + 1}/{retries}"
-                    )
-                    continue
-                raise
-            except serial.SerialException as e:
-                raise LaserError(f"Serial communication error: {e}")
+        with self._ser_lock:
+            for attempt in range(retries):
+                try:
+                    telegram = self._construct_request(req_data_unit)
+                    self.ser.write(telegram.encode("ascii"))
+                    response = self.ser.read_until(self.EC.encode()).decode("ascii")
+                    if not response:
+                        raise LaserProtocolError("No response received from laser")
+                    if response == self.EC and not expect_reply:
+                        return {"status": "ACK"}
+                    if not self._verify_fcs(response):
+                        raise LaserProtocolError("Invalid checksum in response")
+                    return self._parse_response(response)
+                except LaserProtocolError as e:
+                    if attempt < retries - 1:
+                        if "Forbidden" in str(e):
+                            time.sleep(2)
+                        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                        print(
+                            f"{ts} - WARNING - Retrying command {req_data_unit}... Attempt {attempt + 1}/{retries}"
+                        )
+                        continue
+                    raise
+                except serial.SerialException as e:
+                    raise LaserError(f"Serial communication error: {e}")
 
         # nur für Dich, Pylance
         raise RuntimeError(
