@@ -5,6 +5,7 @@ from slay.settings import MeasurementSettings
 from slay.lasers import NKT
 from slay.lasers import LTB
 from slay.lasers import LaserProtocolError
+from slay.lasers import LaserError
 from slay.camera import USBCamera
 from slay.live_plotter import LivePlotter
 from slay.backup_service import BackupService
@@ -27,8 +28,6 @@ import os
 import time
 import datetime
 import numpy as np
-from appdirs import user_cache_dir
-
 
 np.set_printoptions(suppress=True)
 
@@ -69,6 +68,29 @@ class Measurement:
             and "docker" in cgroup.read_text(encoding="utf-8")
         )
 
+    def _resolve_spectrometer_driver(self, specto):
+        try:
+            if isinstance(specto, MeasurementSettings.StellarnetSpectoSettings):
+                if not self.is_docker():
+                    raise RuntimeError("Not running in a docker container.")
+                from slay.stellarnet import StellarnetSpectrometer as SpectrometerDriver
+            elif isinstance(specto, MeasurementSettings.ThorlabsSpectoSettings):
+                from slay.thorlabs import ThorlabsSpectrometer as SpectrometerDriver
+            else:
+                raise ValueError(f"Unknown spectrometer settings type: {type(specto)}")
+
+            return SpectrometerDriver, False
+        except Exception:
+            print(
+                f"\n Failed to load the spectrometer driver for {type(specto).__name__}.\n"
+            )
+            print(traceback.format_exc())
+
+            print("Running in debug-mode.\n")
+            from slay.virtual import Spectrometer as SpectrometerDriver
+
+            return SpectrometerDriver, True
+
     def __init__(
         self,
         serial_path: str,
@@ -80,30 +102,17 @@ class Measurement:
         measurements_dir: str,
     ):
 
-        specto = MEASUREMENT_SETTINGS.specto
-        try:
-            if isinstance(specto, MeasurementSettings.StellarnetSpectoSettings):
-                if not self.is_docker():
-                    raise RuntimeError("Not running in a docker container.")
-                from slay.stellarnet import StellarnetSpectrometer as SpectrometerDriver
-            elif isinstance(specto, MeasurementSettings.ThorlabsSpectoSettings):
-                from slay.thorlabs import ThorlabsSpectrometer as SpectrometerDriver
-            else:
-                raise ValueError(f"Unknown spectrometer settings type: {type(specto)}")
-
-            DEBUG = False
-        except Exception:
-            print(f"\n Failed to load the spectrometer driver for {type(specto).__name__}.\n")
-            print(traceback.format_exc())
-
-            # exit()
-            print("Running in debug-mode.\n")
-            from slay.virtual import Spectrometer as SpectrometerDriver
-
-            DEBUG = True
-
-        self.spectrometer_driver = SpectrometerDriver
-        self.DEBUG = DEBUG
+        self.spectrometer_driver_a, self.DEBUG_a = self._resolve_spectrometer_driver(
+            MEASUREMENT_SETTINGS.specto
+        )
+        self.spectrometer_b = None
+        self.spectrometer_driver_b, self.DEBUG_b = (None, False)
+        if MEASUREMENT_SETTINGS.specto_b is not None:
+            self.spectrometer_driver_b, self.DEBUG_b = (
+                self._resolve_spectrometer_driver(MEASUREMENT_SETTINGS.specto_b)
+            )
+        # ob irgendeine der Messungen (teilweise) synthetisch ist
+        self.DEBUG = self.DEBUG_a or self.DEBUG_b
 
         self.MEASUREMENT_SETTINGS = MEASUREMENT_SETTINGS
 
@@ -111,12 +120,14 @@ class Measurement:
 
         # für das Spektrometer und den LTb muss jeweils ziemlich lange gewartet werden
         # (bei dem Spektrometer je nach Integrationszeit, da bei der Initialisierung eine erste Messung durchgeführt wird)
-        init_tasks = (
-            (self.init_spectrometer, ()),
+        init_tasks = [
+            (self.init_spectrometer, ("a",)),
             (self.init_mcu, (serial_path, 3)),
             (self.init_nkt, (nkt_path,)),
             # (self.init_ltb, (ltb_path,)),
-        )
+        ]
+        if MEASUREMENT_SETTINGS.specto_b is not None:
+            init_tasks.append((self.init_spectrometer, ("b",)))
 
         # ProcessPoolExecutor funktioniert nur, wenn die Funktionen/Argumente gepickelt werden können (außerhalb der Klasse definiert etc.)
         with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -126,17 +137,26 @@ class Measurement:
 
         # wird von mehreren Threads genutzt, daher lock
         self.mcu_lock = Lock()
+        # bei zwei Spektrometern könnten beide gleichzeitig in die gemeinsamen settings schreiben
+        self.settings_save_lock = Lock()
 
         # self.init_spectrometer()
         # self.init_mcu(serial_path, wait=3)
         # self.init_nkt(nkt_path)
         self.init_ltb(ltb_path)
 
-        self.messdata = SpectrumData(
+        self.messdata_a = SpectrumData(
             self.MEASUREMENT_SETTINGS.laser.num_gradiants,
             self.MEASUREMENT_SETTINGS.laser.REPETITIONS,
-            self.get_wav(),
+            self.get_wav("a"),
         )
+        self.messdata_b = None
+        if self.spectrometer_b is not None:
+            self.messdata_b = SpectrumData(
+                self.MEASUREMENT_SETTINGS.laser.num_gradiants,
+                self.MEASUREMENT_SETTINGS.laser.REPETITIONS_B,
+                self.get_wav("b"),
+            )
 
         self.set_laser_powers(0)
         # aktuell noch keine Output-Power
@@ -160,7 +180,14 @@ class Measurement:
             cam_path,
             os.path.join(self.measurement_save_dir, self.measurement_file_name),
         )
-        self.backup_service = BackupService(self, self.messdata, cache_dir)
+        self.backup_service_a = BackupService(
+            self, self.messdata_a, cache_dir, which="a"
+        )
+        self.backup_service_b = None
+        if self.messdata_b is not None:
+            self.backup_service_b = BackupService(
+                self, self.messdata_b, cache_dir, which="b"
+            )
 
     def set_laser_powers(self, index):
 
@@ -257,6 +284,8 @@ class Measurement:
         # except LaserProtocolError as e:
         #     print(f"Could not run activate_external_trigger() again: {e} ", flush=True)
         self.ltb.set_hv_voltage(self.MEASUREMENT_SETTINGS.laser.INTENSITY_LTB[index])
+        self.ltb.set_transmission(200)
+
         # wird jetzt auch über den mcu getriggert
         # self.ltb.set_repetition_rate(
         #     self.MEASUREMENT_SETTINGS.laser.REPETITIONS_LTB[index]
@@ -285,9 +314,10 @@ class Measurement:
         except serial.serialutil.SerialException as e:
             print(f"Failed to connect to the MCU: {e}")
             print("You may have to unplug and replug the MCU.")
-            #raise e
+            # raise e
 
             from slay.virtual import MCU
+
             self.mcu = MCU()
 
     def set_firmware_variable(self, name, value):
@@ -331,15 +361,29 @@ class Measurement:
             self.mcu.write(b"0")
             time.sleep(self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY / 1000.0)
 
-    def init_spectrometer(self):
-        """Verbindet sich mit dem Spektrometer."""
+    def init_spectrometer(self, which="a"):
+        """Verbindet sich mit dem Spektrometer 'a' (Standard) oder 'b' (zweiter Winkel)."""
+
+        specto = (
+            self.MEASUREMENT_SETTINGS.specto
+            if which == "a"
+            else self.MEASUREMENT_SETTINGS.specto_b
+        )
+        driver = (
+            self.spectrometer_driver_a if which == "a" else self.spectrometer_driver_b
+        )
 
         print(
-            "Connecting to the spectrometer. Thus getting a first measurement, this might take a while....",
+            f"Connecting to spectrometer {which}. Thus getting a first measurement, this might take a while....",
             flush=True,
         )
-        self.spectrometer = self.spectrometer_driver(0)
-        self.spectrometer.configure(self.MEASUREMENT_SETTINGS.specto)
+        spectrometer = driver(specto.device_index)
+        spectrometer.configure(specto)
+
+        if which == "a":
+            self.spectrometer_a = spectrometer
+        else:
+            self.spectrometer_b = spectrometer
 
     def init_nkt(self, nkt_path):
         self.nkt = NKT(nkt_path)
@@ -358,12 +402,14 @@ class Measurement:
         except LaserProtocolError as e:
             print(e)
 
-    def get_wav(self):
-        return self.spectrometer.get_wavelengths()
+    def get_wav(self, which="a"):
+        spectrometer = self.spectrometer_a if which == "a" else self.spectrometer_b
+        return spectrometer.get_wavelengths()
 
-    def get_data(self):
+    def get_data(self, which="a"):
         """Liest die Daten des Spektrometers aus."""
-        return self.spectrometer.measure()
+        spectrometer = self.spectrometer_a if which == "a" else self.spectrometer_b
+        return spectrometer.measure()
 
     def led_red(self):
         self.set_firmware_variable("SetLED", 511)
@@ -386,15 +432,15 @@ class Measurement:
             "nkt emission off", lambda: self.nkt.set_register("emission", 0)
         )
         # manuelles triggern erlauben und (vorsichtshalber) die power runterstellen.
-        self._try_stop_step(
-            "nkt power down", lambda: self.nkt.set_register("power", 1)
-        )
+        self._try_stop_step("nkt power down", lambda: self.nkt.set_register("power", 1))
         # internal trigger
         self._try_stop_step(
             "nkt internal trigger", lambda: self.nkt.set_register("operating_mode", 0)
         )
         # Spektrometer freigeben
-        self._try_stop_step("spectrometer.close", self.spectrometer.close)
+        self._try_stop_step("spectrometer_a.close", self.spectrometer_a.close)
+        if self.spectrometer_b is not None:
+            self._try_stop_step("spectrometer_b.close", self.spectrometer_b.close)
         self._try_stop_step("led_green", self.led_green)
 
         self._try_stop_step("ltb.close", self.ltb.close)
@@ -441,52 +487,52 @@ class Measurement:
             f"std: +/- {np.std(np.array(seconds_list) - seconds_list[0] - (delays_time))}"
         )
 
-    def time_measurement(self, measure):
+    def time_measurement(self, measure, messdata, specto, repetitions, label=""):
 
         # watchdog updaten
         # self.send_firmware_signal("3")
 
+        prefix = f"{label}: " if label else ""
         seconds = time.time()
 
-        print("\nrepetitions:")
-        for i in range(self.MEASUREMENT_SETTINGS.laser.REPETITIONS):
+        print(f"\n{prefix}repetitions:")
+        for i in range(repetitions):
             measure(i)
             sys.stdout.write("\r")
-            sys.stdout.write(" " + str(i))
+            sys.stdout.write(f" {prefix}{i}")
             sys.stdout.flush()
-            self.messdata.curr_measurement_index = i
+            messdata.curr_measurement_index = i
             if time.time() - seconds > self.MEASUREMENT_SETTINGS.TIMEOUT:
-                print("\nreached timeout!")
+                print(f"\n{prefix}reached timeout!")
                 break
 
         # \r resetten
         print()
-        print("finished measurements")
+        print(f"{prefix}finished measurements")
 
         total_time_millis = int(round(time.time() * 1000)) - int(round(seconds * 1000))
-        print(f"measurements took: {total_time_millis} ms")
+        print(f"{prefix}measurements took: {total_time_millis} ms")
         if not self.MEASUREMENT_SETTINGS.laser.CONTINUOUS:
             delays_time = (
                 self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY
                 + 2 * self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY
                 + self.MEASUREMENT_SETTINGS.laser.IRRADITION_TIME
-            ) * self.MEASUREMENT_SETTINGS.laser.REPETITIONS
+            ) * repetitions
         else:
             delays_time = (
-                self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY
-                * self.MEASUREMENT_SETTINGS.laser.REPETITIONS
+                self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY * repetitions
                 + 2 * self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY
             )
-        print(f"thereof delays: {delays_time} ms")
+        print(f"{prefix}thereof delays: {delays_time} ms")
         print(
-            f"a measurement took: {total_time_millis / 1.0 / self.MEASUREMENT_SETTINGS.laser.REPETITIONS} ms"
+            f"{prefix}a measurement took: {total_time_millis / 1.0 / repetitions} ms"
         )
         print("without delays:")
         print(
-            f"a measurement took: {(total_time_millis - delays_time) / 1.0 / self.MEASUREMENT_SETTINGS.laser.REPETITIONS} ms"
+            f"{prefix}a measurement took: {(total_time_millis - delays_time) / 1.0 / repetitions} ms"
         )
         print(
-            f"(should be roughly {self.MEASUREMENT_SETTINGS.specto.INTTIME})",
+            f"{prefix}(should be roughly {specto.INTTIME})",
             flush=True,
         )
 
@@ -501,40 +547,25 @@ class Measurement:
     def ltb_watchdog(self, stop_event=None):
         """Docs: If there is no communication between the laser and the computer for more than 30 seconds, the laser will be switched into the standby mode."""
         while stop_event is None or not stop_event.is_set():
-            status = self.ltb.get_version_info()
-            # print(f"LTB status: {status}", flush=True)
-            # if "WARNING" in status:
-            #     print(status, flush=True)
-            time.sleep(2)
+            try:
+                status = self.ltb.get_version_info()
+                # print(f"LTB status: {status}", flush=True)
+                # if "WARNING" in status:
+                #     print(status, flush=True)
+            except LaserError as e:
+                print(f"ltb_watchdog: {e}, retrying next cycle", flush=True)
+            time.sleep(5)
 
-    def continuous_measurement(self):
-
-        # if self.arduino is None:
-        #     print("Arduino not set up! Can not measure.")
-        #     return
+    def continuous_measurement(
+        self, spectrometer, messdata, specto, repetitions, label=""
+    ):
 
         def measure(i):
-            self.messdata.measurements[self.messdata.curr_gradiant][i] = self.get_data()
-            self.messdata.timestamps[self.messdata.curr_gradiant][i] = time.time()
+            messdata.measurements[messdata.curr_gradiant][i] = spectrometer.measure()
+            messdata.timestamps[messdata.curr_gradiant][i] = time.time()
             time.sleep(self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000.0)
 
-        self.led_red()
-        # auch, wenn Emission schon an ist, wird der LASER extern vom Arduino getriggert
-        # (Emission muss jedoch erst an sein, bevor der LASER extern getriggert werden kann)
-        self.nkt.set_register("emission", 1)
-
-        def measure_func():
-            self.turn_on_laser()
-            print("turned on lasers", flush=True)
-            self.time_measurement(measure)
-
-        # ggf. schon wieder aus weil zu große Integrationszeit
-        # try:
-        #     self.ltb.activate_external_trigger()
-        # except LaserProtocolError as e:
-        #     print(e)
-        measure_func()
-        # self.watchdog_wrap(self.mcu_watchdog, measure_func)
+        self.time_measurement(measure, messdata, specto, repetitions, label)
 
     def pulse_measurement(self):
 
@@ -545,29 +576,74 @@ class Measurement:
         def measure(i):
             self.turn_on_laser()
             time.sleep(self.MEASUREMENT_SETTINGS.laser.IRRADITION_TIME / 1000.0)
-            self.messdata.measurements[self.messdata.curr_gradiant][i] = self.get_data()
-            self.messdata.timestamps[self.messdata.curr_gradiant][i] = time.time()
+            self.messdata_a.measurements[self.messdata_a.curr_gradiant][i] = (
+                self.get_data("a")
+            )
+            self.messdata_a.timestamps[self.messdata_a.curr_gradiant][i] = time.time()
             self.turn_off_laser()
             time.sleep(self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000.0)
 
         self.led_red()
         # auch, wenn Emission schon an ist, wird der LASER extern vom Arduino getriggert
         self.nkt.set_register("emission", 1)
-        self.time_measurement(measure)
+        self.time_measurement(
+            measure,
+            self.messdata_a,
+            self.MEASUREMENT_SETTINGS.specto,
+            self.MEASUREMENT_SETTINGS.laser.REPETITIONS,
+        )
 
     def _measure_task(self):
-        for self.messdata.curr_gradiant in range(
-            self.MEASUREMENT_SETTINGS.laser.num_gradiants
-        ):
+        dual = self.spectrometer_b is not None
 
-            self.set_laser_powers(self.messdata.curr_gradiant)
+        for gradient in range(self.MEASUREMENT_SETTINGS.laser.num_gradiants):
+            self.messdata_a.curr_gradiant = gradient
+            if dual:
+                self.messdata_b.curr_gradiant = gradient
+
+            self.set_laser_powers(gradient)
 
             if self.MEASUREMENT_SETTINGS.laser.CONTINUOUS:
-                self.continuous_measurement()
+                self.led_red()
+                # auch, wenn Emission schon an ist, wird der LASER extern vom Arduino getriggert
+                # (Emission muss jedoch erst an sein, bevor der LASER extern getriggert werden kann)
+                self.nkt.set_register("emission", 1)
+                self.turn_on_laser()
+                print("turned on lasers", flush=True)
+
+                if dual:
+                    thread_b = Thread(
+                        target=self.continuous_measurement,
+                        args=(
+                            self.spectrometer_b,
+                            self.messdata_b,
+                            self.MEASUREMENT_SETTINGS.specto_b,
+                            self.MEASUREMENT_SETTINGS.laser.REPETITIONS_B,
+                            "B",
+                        ),
+                    )
+                    thread_b.start()
+                    self.continuous_measurement(
+                        self.spectrometer_a,
+                        self.messdata_a,
+                        self.MEASUREMENT_SETTINGS.specto,
+                        self.MEASUREMENT_SETTINGS.laser.REPETITIONS,
+                        "A",
+                    )
+                    thread_b.join()
+                else:
+                    self.continuous_measurement(
+                        self.spectrometer_a,
+                        self.messdata_a,
+                        self.MEASUREMENT_SETTINGS.specto,
+                        self.MEASUREMENT_SETTINGS.laser.REPETITIONS,
+                    )
             else:
                 self.pulse_measurement()
 
-        self.messdata.stop_event.set()
+        self.messdata_a.stop_event.set()
+        if dual:
+            self.messdata_b.stop_event.set()
 
     def measure(self, gui=True):
 
@@ -596,9 +672,14 @@ class Measurement:
             daemon=True,
         )
 
-        backup_p = Thread(
-            target=self.backup_service.start,
+        backup_p_a = Thread(
+            target=self.backup_service_a.start,
             daemon=True,
+        )
+        backup_p_b = (
+            Thread(target=self.backup_service_b.start, daemon=True)
+            if self.backup_service_b is not None
+            else None
         )
         print("made threads", flush=True)
         try:
@@ -606,19 +687,29 @@ class Measurement:
             self.cam.start()
             print("started cam", flush=True)
             if self.MEASUREMENT_SETTINGS.UNIQUE:
-                backup_p.start()
+                backup_p_a.start()
+                if backup_p_b is not None:
+                    backup_p_b.start()
             if self.MEASUREMENT_SETTINGS.laser.CONTINUOUS:
                 mcu_p.start()
             print("staring a measurement process", flush=True)
             measure_p.start()
 
             if gui:
-                live_plotter = LivePlotter()
+                # desto langsamer das Spektrometer, desto mehr Zeit wird pro Frame/Repetition benötigt
+                interval = max(self.MEASUREMENT_SETTINGS.measurement_time, 300)
+                if self.messdata_b is not None:
+                    interval = max(
+                        interval, self.MEASUREMENT_SETTINGS.measurement_time_b
+                    )
+
+                live_plotter = LivePlotter(dual=self.messdata_b is not None)
                 live_plotter.start(
-                    self.messdata.measurements.shape[0]
-                    * self.messdata.measurements.shape[1],
-                    max(self.MEASUREMENT_SETTINGS.measurement_time, 300),
-                    self.messdata,
+                    self.messdata_a.measurements.shape[0]
+                    * self.messdata_a.measurements.shape[1],
+                    interval,
+                    self.messdata_a,
+                    self.messdata_b,
                 )
 
             measure_p.join()
@@ -642,57 +733,68 @@ class Measurement:
 
             self.stop_all_devices()
 
-    def save(self, plt_only=False, measurements_only=False, cache_path: str = ""):
+    def _save_targets(self, which=None):
+        """Returned für jedes zu speichernde Spektrometer (None=alle) [Dateisuffix, messdata, Spektrometer] zum speichern"""
+        dual = self.messdata_b is not None
+        targets = []
+        if which in (None, "a"):
+            targets.append(("-a" if dual else "", self.messdata_a, "a"))
+        if which in (None, "b") and dual:
+            targets.append(("-b", self.messdata_b, "b"))
+        return targets
+
+    def save(
+        self,
+        plt_only=False,
+        measurements_only=False,
+        cache_path: str = "",
+        # eventuell nur eines speichern: JSON settings werden so oder so geschrieben
+        which=None,
+    ):
         """Schreibt die Messdaten in einen spezifizierten Ordner."""
         # gemeinsame Typen werden in einem gemeinsamen Ordner gespeichert
 
         # impliziert, dass zum cache geschrieben werden soll
         if cache_path:
             assert not plt_only and measurements_only
-            save_dir = cache_path
-            print(f"saving to cache: {save_dir}", flush=True)
-        else:
-            save_dir = self.measurement_save_dir
+            print(f"saving to cache: {cache_path}", flush=True)
 
+        save_dir = cache_path if cache_path else self.measurement_save_dir
         os.makedirs(save_dir, 0o777, exist_ok=True)
 
         if not plt_only:
-            with open(
-                os.path.join(save_dir, self.measurement_file_name + ".json"),
-                "w",
-                encoding="utf-8",
-            ) as json_file:
-                self.MEASUREMENT_SETTINGS.save_as_json(json_file)
+            # kann von den Backup-Threads beider Spektrometer gleichzeitig aufgerufen werden
+            with self.settings_save_lock:
+                with open(
+                    os.path.join(save_dir, self.measurement_file_name + ".json"),
+                    "w",
+                    encoding="utf-8",
+                ) as json_file:
+                    self.MEASUREMENT_SETTINGS.save_as_json(json_file)
 
-            # metadata = np.zeros(9, dtype=int)
-            # metadata[0] = self.MEASUREMENT_SETTINGS["INTTIME"]
-            # metadata[1] = self.MEASUREMENT_SETTINGS["INTENSITY"]
-            # metadata[2] = self.MEASUREMENT_SETTINGS["SCAN_AVG"]
-            # metadata[3] = self.MEASUREMENT_SETTINGS["SMOOTH"]
-            # metadata[4] = self.MEASUREMENT_SETTINGS["XTIMING"]
-            # metadata[5] = self.MEASUREMENT_SETTINGS["laser"]["REPETITIONS"]
-            # metadata[6] = self.MEASUREMENT_SETTINGS["ARDUINO_DELAY"]
-            # metadata[7] = self.MEASUREMENT_SETTINGS["IRRADITION_TIME"]
-            # metadata[8] = int(self.MEASUREMENT_SETTINGS["laser"]["CONTINUOUS"])
+        for suffix, messdata, spectrometer in self._save_targets(which):
+            file_name = self.measurement_file_name + suffix
 
-            np.savez_compressed(
-                os.path.join(save_dir, self.measurement_file_name),
-                np.array(self.messdata.measurements),
-                np.array(self.messdata.wav),
-                np.array(self.messdata.timestamps),
-            )
-            os.chmod(os.path.join(save_dir, self.measurement_file_name + ".npz"), 0o777)
+            if not plt_only:
+                np.savez_compressed(
+                    os.path.join(save_dir, file_name),
+                    np.array(messdata.measurements),
+                    np.array(messdata.wav),
+                    np.array(messdata.timestamps),
+                )
+                os.chmod(os.path.join(save_dir, file_name + ".npz"), 0o777)
 
-        if not measurements_only:
-            SpectrumPlot.plot_results(
-                [
-                    PlotSettings(
-                        os.path.join(
-                            self.measurement_save_dir,
-                            self.measurement_file_name + ".npz",
-                        ),
-                        True,
-                    )
-                ],
-                self.MEASUREMENT_SETTINGS,
-            )
+            if not measurements_only:
+                SpectrumPlot.plot_results(
+                    [
+                        PlotSettings(
+                            os.path.join(
+                                self.measurement_save_dir,
+                                file_name + ".npz",
+                            ),
+                            True,
+                        )
+                    ],
+                    self.MEASUREMENT_SETTINGS,
+                    which=spectrometer,
+                )

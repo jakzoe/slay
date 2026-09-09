@@ -5,12 +5,13 @@ import time
 
 class BackupService:
 
-    def __init__(self, measurement_manager, messdata, cache_dir: str):
+    def __init__(self, measurement_manager, messdata, cache_dir: str, which="a"):
         self.measurement_manager = measurement_manager
         self.messdata = messdata
         self.past_measurement_index = -1
         self.last_save_time = -1
         self.cache_dir = cache_dir
+        self.which = which
         # aktuell schreibe ich jedes Mal einfach den kompletten Array neu, statt nur zu appenden.
         # das könnte bei größeren Messungen zu delays führen, da es aktuell nur ein Thread, kein Prozess ist...
         self.max_save_interval = max(
@@ -34,7 +35,10 @@ class BackupService:
                 continue
 
             self.measurement_manager.save(
-                measurements_only=True, plt_only=False, cache_path=self.cache_dir
+                measurements_only=True,
+                plt_only=False,
+                cache_path=self.cache_dir,
+                which=self.which,
             )
 
             self.past_measurement_index = self.messdata.curr_measurement_index

@@ -34,7 +34,7 @@ class ThorlabsSpectrometer:
     def configure(self, specto_settings):
         self._spectrometer.set_exposure_ms(specto_settings.INTTIME)
         self._spectrometer.set_hardware_average(specto_settings.SCAN_AVG)
-        self._spectrometer.use_amplitude_correction = specto_settings.AMPLIFICATION
+        self._spectrometer.use_amplitude_correction = specto_settings.AMPLITUDE_CORRECTION
         self._update_dark_spectrum()
 
     def _update_dark_spectrum(self):

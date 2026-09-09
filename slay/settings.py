@@ -15,12 +15,16 @@ class MeasurementSettings:
         SCAN_AVG: int
         SMOOTH: int
         XTIMING: int
+        # welches der (ggf. mehreren) verbundenen Spektrometer dieses Typs genutzt werden soll
+        device_index: int = 0
 
     @dataclass
     class ThorlabsSpectoSettings:
         INTTIME: int
         SCAN_AVG: int
-        AMPLIFICATION: bool = False
+        AMPLITUDE_CORRECTION: bool = False
+        # welches der (ggf. mehreren) verbundenen Spektrometer dieses Typs genutzt werden soll
+        device_index: int = 0
 
     @dataclass
     class LaserSettings:
@@ -48,6 +52,9 @@ class MeasurementSettings:
         REPETITIONS_LTB: str = "0"
         # mit einem Blatt testen, wie weit der Fokuspunkt der Diodenlaser von der Küvette entfernt sind
         FOCUS_DIST: int = 0
+        # eigene Anzahl an Wiederholungen für specto_b (z.B. da specto_b eine kürzere INTTIME hat und in derselben
+        # Zeit mehr Messungen aufnehmen soll). Wenn 0 einfach dieselbe Anzahl wie REPETITIONS / spec_a.
+        REPETITIONS_B: int = 0
 
         def __post_init__(self):
             self.convert_string_values()
@@ -187,11 +194,33 @@ class MeasurementSettings:
         0  # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0
     )
     OXYGEN_SPEED: int = 0  # wie viel Luft pro Minute gepumpt wird.
+    # None wenn nur ein einziges genutzt wurde
+    specto_b: Union[StellarnetSpectoSettings, ThorlabsSpectoSettings, None] = None
 
     def __post_init__(self):
+        if self.specto_b is not None and not self.laser.CONTINUOUS:
+            raise ValueError(
+                "Ein zweites Spektrometer (specto_b) wird nur im CONTINUOUS Mode unterstützt."
+            )
+
+        if (
+            self.specto_b is not None
+            and type(self.specto) is type(self.specto_b)
+            and self.specto.device_index == self.specto_b.device_index
+        ):
+            raise ValueError(
+                f"specto und specto_b sind vom selben Spektrometer-Typ und haben denselben device_index ({self.specto.device_index}). Es wurde also zweimal dasselbe Spektrometer konfiguriert. Wahrscheinlich wurde vergessen, den default device_index zu ändern."
+            )
+
         # in ms, Abschätzung
         if self.laser.CONTINUOUS:
             self.measurement_time = self.specto.INTTIME + self.laser.MEASUREMENT_DELAY
+            if self.specto_b is not None:
+                self.measurement_time_b = (
+                    self.specto_b.INTTIME + self.laser.MEASUREMENT_DELAY
+                )
+                if not self.laser.REPETITIONS_B:
+                    self.laser.REPETITIONS_B = self.laser.REPETITIONS
         else:
             self.measurement_time = (
                 2 * self.laser.SERIAL_DELAY
@@ -208,17 +237,26 @@ class MeasurementSettings:
         with open(json_file_path, "r", encoding="utf-8") as file:
             data = json.load(file)
 
+        def specto_from_dict(specto_dict):
+            # nicht sooo stable (eventuell spectro name parameter einführen), aber: SMOOTH/XTIMING gibt es nur bei stellarnet
+            specto_cls = (
+                MeasurementSettings.StellarnetSpectoSettings
+                if "SMOOTH" in specto_dict
+                else MeasurementSettings.ThorlabsSpectoSettings
+            )
+            return from_dict(specto_cls, specto_dict)
+
         def from_dict(cls, dict_data):
             if cls == MeasurementSettings:
                 specto_dict = dict_data.pop("specto")
-                # nicht sooo stable (eventuell spectro name parameter einführen), aber: SMOOTH/XTIMING gibt es nur bei stellarnet
-                specto_cls = (
-                    MeasurementSettings.StellarnetSpectoSettings
-                    if "SMOOTH" in specto_dict
-                    else MeasurementSettings.ThorlabsSpectoSettings
-                )
+                specto_b_dict = dict_data.pop("specto_b", None)
                 return cls(
-                    specto=from_dict(specto_cls, specto_dict),
+                    specto=specto_from_dict(specto_dict),
+                    specto_b=(
+                        specto_from_dict(specto_b_dict)
+                        if specto_b_dict is not None
+                        else None
+                    ),
                     laser=from_dict(
                         MeasurementSettings.LaserSettings, dict_data.pop("laser")
                     ),

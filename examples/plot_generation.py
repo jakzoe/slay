@@ -65,6 +65,18 @@ def sync_messungen_pics(src_name="messungen", dest_name="messungen_pics"):
             shutil.copy2(src_file, dest_file)
 
 
+def resolve_settings_path(path, name):
+    """Bei zwei gleichzeitig genutzten Spektrometern gibt es zwei Messdaten-Dateien mit jeweiligem Suffix sowie eine gemeinsame settings Datei.
+    In dem Fall nun aus dem Namen der Messdatei die settings finden."""
+    for suffix, which in (("-a", "a"), ("-b", "b")):
+        if name.endswith(suffix):
+            base_name = name[: -len(suffix)]
+            candidate = os.path.join(path, base_name + ".json")
+            if os.path.exists(candidate):
+                return candidate, which
+    return os.path.join(path, name + ".json"), "a"
+
+
 def make_plots(path, name):
 
     # damit nicht alles durcheinander ist (wegen multiprocessing)
@@ -74,7 +86,7 @@ def make_plots(path, name):
     p_settings = []
 
     measurement_path = os.path.join(path, name + ".npz")
-    measurement_path_json = os.path.join(path, name + ".json")
+    measurement_path_json, which = resolve_settings_path(path, name)
     m_settings = MeasurementSettings.from_json(measurement_path_json)
     print(f"{m_settings.TYPE}")
     # grüner Text (\033[ ist Escape sequence start, 32m Green color code, 4m underline, 0m color reset)
@@ -209,7 +221,7 @@ def make_plots(path, name):
         f(False)
 
     for p in p_settings:
-        SpectrumPlot.plot_results(p, m_settings, show_plots=False)
+        SpectrumPlot.plot_results(p, m_settings, which=which, show_plots=False)
 
     sys.stdout.flush()
     # sys.stderr.flush()

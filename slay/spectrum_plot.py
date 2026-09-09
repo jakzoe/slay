@@ -701,6 +701,7 @@ class SpectrumPlot:
     def plot_results(
         plotting_settings: list[PlotSettings],
         ms: MeasurementSettings,
+        which="a",
         colors=None,
         show_plots=True,
         use_grid=False,
@@ -895,10 +896,13 @@ class SpectrumPlot:
                     setting.zoom_start : setting.zoom_end,
                 ]
 
+                specto_settings = (
+                    measurement_settings.specto
+                    if which == "a"
+                    else measurement_settings.specto_b
+                )
                 normalize_integrationtime_factor = (
-                    measurement_settings.specto.INTTIME
-                    if setting.normalize_integrationtime
-                    else 1
+                    specto_settings.INTTIME if setting.normalize_integrationtime else 1
                 )
                 normalize_factor = (
                     np.max(spectrometer_data) if setting.normalize_data else 1

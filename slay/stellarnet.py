@@ -6,7 +6,7 @@ class StellarnetSpectrometer:
         self._driver = driver
         self._handle = driver.array_get_spec_only(index)
 
-        # mein Spektrometer hat das Zusatzmodul dazu beispielsweise gar nicht
+        # hat scheinbar nichts mit external triggering zu tun: Mein Spektrometer hat das Modul beispielsweise gar nicht. Es schaltet lediglich ein Timeout aus oder an, welches einen Fehler schmeißt, wenn das Readout zu lange dauert
         driver.ext_trig(self._handle, True)
 
     def configure(self, specto_settings):
