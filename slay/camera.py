@@ -14,6 +14,8 @@ class USBCamera:
         frame_width=640,
         frame_height=480,
         capture_fps=30,
+        # supported by VSCode instead of mp4v
+        # video_codec="avc1",
         video_codec="mp4v",
     ):
 
@@ -66,18 +68,31 @@ class USBCamera:
 
         os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
 
-        np.save(
-            self.output_path + "-cam-timestamps.npy",
-            np.array(ts_list, dtype=np.float64),
-        )
+        ts_arr = np.array(ts_list, dtype=np.float64)
+        np.save(self.output_path + "-cam-timestamps.npy", ts_arr)
+
+        # zumindest bei meiner Kamera gibt es sehr sehr starke Abweichungen von den eingestellen FPS, deshalb nochmal ausrechnen
+        duration = ts_arr[-1] - ts_arr[0] if len(ts_arr) > 1 else 0
+        fps = (len(ts_arr) - 1) / duration if duration > 0 else self.capture_fps
 
         fourcc = cv2.VideoWriter_fourcc(*self.video_codec)
         vw = cv2.VideoWriter(
             self.output_path + ".mp4",
             fourcc,
-            self.capture_fps,
+            fps,
             (self.frame_width, self.frame_height),
         )
-        for frame in frame_list:
-            vw.write(frame)
+        if frame_list:
+            # resampeln auf die timestamps, sonst entspricht die Videozeit nicht den gespeicherten timestamps (frames sind häufig nicht gleichmäßig verteilt)
+            n_out_frames = (
+                max(1, round(duration * fps)) if duration > 0 else len(frame_list)
+            )
+            out_timestamps = ts_arr[0] + np.arange(n_out_frames) / fps
+            frame_indices = np.clip(
+                np.searchsorted(ts_arr, out_timestamps, side="right") - 1,
+                0,
+                len(frame_list) - 1,
+            )
+            for idx in frame_indices:
+                vw.write(frame_list[idx])
         vw.release()
