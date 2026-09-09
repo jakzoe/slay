@@ -11,6 +11,7 @@ The pythonnet runtime must be selected *before* `clr` is imported, which is
 why this module does that work at call time inside `load()` rather than
 leaving it to import side effects scattered across the package.
 """
+
 import os
 import platform
 import sys
@@ -51,7 +52,9 @@ def _native_dir(dll_dir: Path) -> Path:
     elif "arm" in machine:
         arch = "arm"
     else:
-        raise RuntimeError(f"Unsupported machine architecture for the Thorlabs CCT SDK: '{machine}'")
+        raise RuntimeError(
+            f"Unsupported machine architecture for the Thorlabs CCT SDK: '{machine}'"
+        )
 
     return dll_dir / "runtimes" / f"{system}-{arch}" / "native"
 
@@ -77,8 +80,10 @@ def load(sdk_root: Optional[Union[str, Path]] = None) -> None:
     if _loaded:
         return
 
-    root = Path(sdk_root) if sdk_root is not None else Path(
-        os.environ.get("THORLABS_CCT_SDK_DIR", _DEFAULT_SDK_ROOT)
+    root = (
+        Path(sdk_root)
+        if sdk_root is not None
+        else Path(os.environ.get("THORLABS_CCT_SDK_DIR", _DEFAULT_SDK_ROOT))
     )
     dll_dir = _dll_dir(root)
     if not dll_dir.is_dir():
@@ -89,6 +94,7 @@ def load(sdk_root: Optional[Union[str, Path]] = None) -> None:
         )
 
     import pythonnet
+
     pythonnet.load("netfx" if os.name == "nt" else "coreclr")
 
     # clr must only be imported after the runtime above has been selected.
