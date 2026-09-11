@@ -16,10 +16,14 @@ import os
 import platform
 import sys
 from pathlib import Path
+from time import sleep
 from typing import Optional, Union
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent
 _DEFAULT_SDK_ROOT = _PACKAGE_ROOT.parent / "pyCCT"
+
+# Poll interval for wait_task()'s loop.
+_TASK_POLL_S = 0.01
 
 _loaded = False
 
@@ -30,6 +34,24 @@ ICompactSpectrographDriver = None
 ExampleLogger = None
 LogLevel = None
 CancellationTokenSource = None
+
+
+def wait_task(task):
+    """
+    Wait for a .NET Task and return its Result, polling instead of blocking
+    directly on Task.Result.
+
+    pythonnet keeps holding the Python GIL for the whole duration of a
+    blocking .NET call, since the wait happens inside a native call the
+    GIL-releasing device driver code never runs. Polling instead lets
+    sleep() release the GIL between checks, letting other Python threads
+    (e.g. a second spectrometer's measurement loop, or an unrelated device
+    on another thread) run concurrently instead of being starved for the
+    call's whole duration.
+    """
+    while not task.IsCompleted:
+        sleep(_TASK_POLL_S)
+    return task.Result
 
 
 def _dll_dir(sdk_root: Path) -> Path:

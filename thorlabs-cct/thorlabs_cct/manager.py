@@ -57,7 +57,7 @@ class SpectrometerManager:
         """Run device discovery across USB, registered Ethernet addresses, and the virtual device (if enabled)."""
         token = cancellation_token if cancellation_token is not None else _runtime.CancellationTokenSource().Token
         try:
-            devices = list(self._helper.GetKnownDevicesAsync(token).Result)
+            devices = list(_runtime.wait_task(self._helper.GetKnownDevicesAsync(token)))
         except Exception as exc:
             raise SpectrometerError(f"Device discovery failed: {exc}") from exc
         logger.info("Discovered %d spectrometer(s): %s", len(devices), devices)
@@ -76,7 +76,11 @@ class SpectrometerManager:
         is reconnected on the next discover() call.
         """
         try:
-            return bool(self._helper.SetSpectrometerDisconnectedByIdAsync(device_id, connect_back).Result)
+            return bool(
+                _runtime.wait_task(
+                    self._helper.SetSpectrometerDisconnectedByIdAsync(device_id, connect_back)
+                )
+            )
         except Exception as exc:
             raise SpectrometerError(f"Failed to change connection state for '{device_id}': {exc}") from exc
 

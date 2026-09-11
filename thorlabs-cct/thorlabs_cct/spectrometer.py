@@ -13,10 +13,6 @@ logger = logging.getLogger(__name__)
 # Mechanical shutter travel time, per the vendor SDK documentation/examples.
 _SHUTTER_SETTLE_S = 0.04
 
-# Poll interval for acquire()'s wait loop; see the comment there for why we
-# poll instead of blocking on Task.Result directly.
-_ACQUIRE_POLL_S = 0.01
-
 
 @dataclass(frozen=True)
 class Spectrum:
@@ -75,7 +71,7 @@ class Spectrometer:
 
     def _run(self, description: str, async_fn, *args):
         try:
-            result = async_fn(*args).Result
+            result = _runtime.wait_task(async_fn(*args))
         except Exception as exc:
             raise SpectrometerError(f"{description} failed: {exc}") from exc
         if not result:
@@ -230,7 +226,7 @@ class Spectrometer:
     def fetch_temperature_electronics_c(self, cancellation_token=None) -> float:
         token = self._token(cancellation_token)
         try:
-            return round(self.raw.FetchTemperatureElectronicsAsync(token).Result, 2)
+            return round(_runtime.wait_task(self.raw.FetchTemperatureElectronicsAsync(token)), 2)
         except Exception as exc:
             raise SpectrometerError(f"Fetch temperature failed: {exc}") from exc
 
@@ -239,18 +235,7 @@ class Spectrometer:
     def acquire(self, cancellation_token=None) -> Spectrum:
         token = self._token(cancellation_token)
         try:
-            task = self.raw.AcquireSingleSpectrumAsync(token)
-            # pythonnet keeps holding the Python GIL for the whole duration of a
-            # blocking .NET call (Task.Result included), since the wait happens
-            # inside a native call the GIL-releasing device driver code never
-            # runs. AcquireSingleSpectrumAsync blocks for ~exposure_ms doing
-            # hardware I/O, so polling instead lets sleep() release the GIL
-            # between checks - letting other Python threads (e.g. a second
-            # spectrometer's measurement loop) run concurrently instead of being
-            # starved for the entire exposure.
-            while not task.IsCompleted:
-                sleep(_ACQUIRE_POLL_S)
-            raw = task.Result
+            raw = _runtime.wait_task(self.raw.AcquireSingleSpectrumAsync(token))
         except Exception as exc:
             raise SpectrometerError(f"Spectrum acquisition failed: {exc}") from exc
         return _to_spectrum(raw)
