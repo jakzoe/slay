@@ -24,9 +24,9 @@ uint16_t pwmDutyVal445 = 0;
 #define PWM_CHANNEL_NITRO 2
 // in us (2-60 sind möglich. Höhere Werte sind einfacher für das PWM)
 // Höhere Werte scheinen dennoch ebenfalls zu funktionieren.
-#define PULSE_WIDTH_NITRO 55
+#define PULSE_WIDTH_NITRO 20
 // Laser kann bis zu 60 Hz. Höher geht dennoch, das wird dann vom Laser selbstständg auf 60 Hz geregelt.
-uint8_t pwmFreqNitro = 10;
+uint8_t pwmFreqNitro = 50;
 // (konstant, da es keinen Grund gibt, die PWM-Auflösung zu ändern)
 // Für < 14 wird der Ausdruck von getLTButyVal() zu klein.
 #define PWM_RES_BITS_NITRO 14
@@ -34,20 +34,21 @@ uint16_t MAX_DUTY_VAL_NITRO = (uint16_t)(pow(2, PWM_RES_BITS_NITRO) - 1);
 
 // PWM Pin
 #define LASER_PIN_405 8
-#define LASER_PIN_445 5
-#define LASER_PIN_NITROGEN 7
+#define LASER_PIN_445 1
+#define LASER_PIN_NITROGEN 10
 
 // wenn der 445 nm Laser kein PWM erhält, erreicht er die maximale Leistung.
 #define DISABLE_PWM_445 false
-#define LASER_PIN_SUPERCON 10
+#define LASER_PIN_SUPERCON 7
 #define LASER_PIN_445_KILL_SWITCH 9
-#define RElAY_405 3
-#define RElAY_445 1
+// #define RElAY_405 3
+// #define RElAY_445 1
 // nicht genug pins. Daher entweder Relays oder LED benutzen
-#define USE_RGB_LED false
-#define LED_R_PIN 1
+#define USE_RGB_LED true
+#define LED_R_PIN 5
 #define LED_G_PIN 3
-#define LED_B_PIN 1 // blue disablen (zu wenig Pins)
+// blue disablen (zu wenig Pins)
+// #define LED_B_PIN 5
 // ein Arduino long hat maximal 10 Ziffern. Plus die 6 für den Namen, ein für das = (6+1 Prefix also) und einen für den Null Characer
 #define SERIAL_DATA_LENGTH 18
 // SERIAL_DATA_LENGTH - SERIAL_DATA_PREFIX_LENGTH ist demnach die maximal mögliche Anzahl an Ziffern
@@ -92,15 +93,15 @@ void setup()
   {
     pinMode(LED_R_PIN, OUTPUT);
     pinMode(LED_G_PIN, OUTPUT);
-    pinMode(LED_B_PIN, OUTPUT);
+    // pinMode(LED_B_PIN, OUTPUT);
   }
   else
   {
-    pinMode(RElAY_405, OUTPUT);
-    pinMode(RElAY_445, OUTPUT);
-    // die Relays sind active low
-    digitalWrite(RElAY_405, LOW);
-    digitalWrite(RElAY_445, LOW);
+    // pinMode(RElAY_405, OUTPUT);
+    // pinMode(RElAY_445, OUTPUT);
+    // // die Relays sind active low
+    // digitalWrite(RElAY_405, LOW);
+    // digitalWrite(RElAY_445, LOW);
   }
 
   pinMode(LASER_PIN_SUPERCON, OUTPUT);
@@ -115,9 +116,10 @@ void setup()
   }
 
   ledcAttachChannel(LASER_PIN_405, pwmFreq405, pwmResBits405, PWM_CHANNEL_405);
-  // pull up
-  // ledcOutputInvert(LASER_PIN_NITROGEN, true);
+
   ledcAttachChannel(LASER_PIN_NITROGEN, pwmFreqNitro, PWM_RES_BITS_NITRO, PWM_CHANNEL_NITRO);
+  // pull up
+  ledcOutputInvert(LASER_PIN_NITROGEN, true);
 
   // ledcAttachChannel attached die Pins auch, daher direkt ausschalten
   enableLocks();
@@ -351,7 +353,7 @@ void setLED(byte r, byte g, byte b)
   // LaserSerial.println("setting LED" + String(r));
   analogWrite(LED_R_PIN, r);
   analogWrite(LED_G_PIN, g);
-  analogWrite(LED_B_PIN, b);
+  // analogWrite(LED_B_PIN, b);
 }
 
 void enableLocks()
@@ -389,6 +391,8 @@ void turnLasersOn()
   ledcAttachChannel(LASER_PIN_405, pwmFreq405, pwmResBits405, PWM_CHANNEL_405);
   ledcAttachChannel(LASER_PIN_445, pwmFreq445, pwmResBits445, PWM_CHANNEL_445);
   ledcAttachChannel(LASER_PIN_NITROGEN, pwmFreqNitro, PWM_RES_BITS_NITRO, PWM_CHANNEL_NITRO);
+  // pull up
+  ledcOutputInvert(LASER_PIN_NITROGEN, true);
 
   ledcWrite(LASER_PIN_405, pwmDutyVal405);
   ledcWrite(LASER_PIN_NITROGEN, getLTBDutyVal());
