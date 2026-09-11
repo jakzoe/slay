@@ -19,6 +19,7 @@ class StellarnetSpectrometer:
             # ignoriert die erste Messung, da diese durch die Änderung der Integrationszeit ungenau sein kann
             True,
         )
+        self._driver.setTempComp(self._handle, specto_settings.TEMP_COMP)
 
     def get_wavelengths(self):
         # es gibt 2048 Elemente, jede der 864 Wellenlängen ist immer mit zwei

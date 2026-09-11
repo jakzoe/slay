@@ -14,15 +14,28 @@ class MeasurementSettings:
         INTTIME: int
         SCAN_AVG: int
         SMOOTH: int
+        """
+        The docs say:
+        XTiming resolution control: 1/2/3 This feature provides increased optical resolutions. Selection 1 is the lowest optical resolution and is synchronized with the selected detector integration. In general, if your requirements for optical resolution are greater than 1nm, then selection 1 is ok. Selection 2 or 3 slows the digitizer & detector clock by a factor of 2 and 4 respectively. With XT levels 2 & 3 you will be able to observe increasingly higher resolutions. The detectors signal amplifier improves with slower throughput. When selecting XT level 2/3 the detector integration time must be increased to 30ms or longer to avoid sync delays.
+        https://mmrc.caltech.edu/StellarNet/StellarNet%20Documents/StellarNet%20Manual%202016.pdf
+        https://www.stellarnet.us/wp-content/uploads/06-Spectrometer-Upgrades-and-Features.pdf
+        """
         XTIMING: int
+        # gleicht wohl temperaturbedingten Baseline-Drift anhand von 15 "optically black" Pixeln aus
+        TEMP_COMP: bool = False
         # welches der (ggf. mehreren) verbundenen Spektrometer dieses Typs genutzt werden soll
         device_index: int = 0
 
     @dataclass
     class ThorlabsSpectoSettings:
+        # 10 us - 30 s
         INTTIME: int
         SCAN_AVG: int
         AMPLITUDE_CORRECTION: bool = False
+        # ob vor der Messung ein Dunkelspektrum aufgenommen und zur Korrektur genutzt werden soll
+        DARK_SPECTRUM_CALIBRATION: bool = True
+        # wird irgendwie nirgends wirklich dokumentiert, aber der Parameter existiert und lässt empirisch einen Wert zwischen 1 dB und 5 dB zu.
+        GAIN: float = 1.0
         # welches der (ggf. mehreren) verbundenen Spektrometer dieses Typs genutzt werden soll
         device_index: int = 0
 
@@ -50,8 +63,6 @@ class MeasurementSettings:
         INTENSITY_LTB: str = "0"
         # in alten Messungen noch nicht vorhanden gewesen, deshalb default 0. Range 0 bis 60
         REPETITIONS_LTB: str = "0"
-        # mit einem Blatt testen, wie weit der Fokuspunkt der Diodenlaser von der Küvette entfernt sind
-        FOCUS_DIST: int = 0
         # eigene Anzahl an Wiederholungen für specto_b (z.B. da specto_b eine kürzere INTTIME hat und in derselben
         # Zeit mehr Messungen aufnehmen soll). Wenn 0 einfach dieselbe Anzahl wie REPETITIONS / spec_a.
         REPETITIONS_B: int = 0
