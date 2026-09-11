@@ -119,6 +119,7 @@ class LTB:
 
     def __new__(cls, port: str, baudrate: int = 9600, timeout: int = 1):
         try:
+            # raise serial.SerialException
             instance = super().__new__(cls)
             instance.ser = serial.Serial(
                 port=port,

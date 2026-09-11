@@ -31,7 +31,7 @@ class BackupService:
                 or self.past_measurement_index == self.messdata.curr_measurement_index
                 or self.last_save_time + self.max_save_interval > time.time()
             ):
-                time.sleep(self.max_save_interval / 2)
+                self.messdata.stop_event.wait(self.max_save_interval / 2)
                 continue
 
             self.measurement_manager.save(

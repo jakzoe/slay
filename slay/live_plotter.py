@@ -47,6 +47,14 @@ class LivePlotter:
 
         self.past_measurement_index[ax_index] = curr_measurement_index
 
+    def _finish(self):
+        plt.close(self.live_fig)
+        # den Server von WebAgg schließen, damit plt.show() nicht mehr blockiert
+        if plt.get_backend().lower() == "webagg" and not plt.get_fignums():
+            import tornado.ioloop
+
+            tornado.ioloop.IOLoop.instance().stop()
+
     def update_plot(self, frame, messdata_a, messdata_b=None):
         """Plottet die aktuell gemessenen Messungen (eines oder zweier Spektrometer)."""
         if messdata_a.stop_event.is_set():
@@ -54,7 +62,7 @@ class LivePlotter:
                 self.live_ani.event_source.stop()
             close_timer = self.live_fig.canvas.new_timer(interval=1)
             close_timer.single_shot = True
-            close_timer.add_callback(lambda: plt.close(self.live_fig))
+            close_timer.add_callback(self._finish)
             close_timer.start()
             return
 
@@ -77,6 +85,11 @@ class LivePlotter:
                 # would have to return the artists to use blitting, which I am not doing right now
                 # blit=True,
             )
+            # die FuncAnimation startet den Timer erst bei dem ersten draw, was bei WebAgg erst geschieht, wenn man die Website aufruft. Macht man nicht immer, daher manuell vorsichtshalber den Timer mit einem Draw starten
+            if plt.get_backend().lower() == "webagg":
+                import tornado.ioloop
+
+                tornado.ioloop.IOLoop.instance().add_callback(self.live_fig.canvas.draw)
             plt.show()
         except AttributeError as e:
             print("Error starting animation:", e, flush=True)

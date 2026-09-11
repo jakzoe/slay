@@ -11,9 +11,16 @@ from matplotlib.ticker import MultipleLocator
 # andere backends sind ebenfalls möglich, brauchen aber teilweise andere dependencies
 import matplotlib
 
-matplotlib.use("Gtk3Agg")
+matplotlib.use("WebAgg")
 import matplotlib.pyplot as plt
 import matplotlib.colors
+
+# von außerhalb des Docker-Containers erreichbar machen
+plt.rcParams["webagg.address"] = "0.0.0.0"
+plt.rcParams["webagg.port"] = 8988
+plt.rcParams["webagg.port_retries"] = 1
+# im Container ist kein Browser installiert, der geöffnet werden könnte
+plt.rcParams["webagg.open_in_browser"] = False
 
 # print(plt.style.available)
 # plt.style.use(["seaborn-v0_8-pastel"])
@@ -389,7 +396,7 @@ class SpectrumPlot:
             ),
             max(  # pylint: disable=nested-min-max
                 max(line_data),
-                0 if settings.normalized else 2000,
+                # 0 if settings.normalized else 2000,
                 settings.ax.get_ylim()[1],
             ),
         )
@@ -610,8 +617,7 @@ class SpectrumPlot:
         ax_heat.set_ylabel("Zeit (s)")
 
         save_path = os.path.dirname(measurement_path)
-        # Millisekunden aus dem Namen entfernen
-        title = os.path.basename(measurement_path).split(".")[0]
+        title = os.path.splitext(os.path.basename(measurement_path))[0]
         SpectrumPlot.save_plots(fig_heat, os.path.join(save_path, title + "_heatmap"))
 
     @staticmethod
@@ -693,8 +699,7 @@ class SpectrumPlot:
         # fig3d.write_image("fig1.png")
 
         save_path = os.path.dirname(measurement_path)
-        # Millisekunden aus dem Namen entfernen
-        title = os.path.basename(measurement_path).split(".")[0]
+        title = os.path.splitext(os.path.basename(measurement_path))[0]
         SpectrumPlot.save_plots(fig3d, os.path.join(save_path, title + "_3d"))
 
     @staticmethod
@@ -1003,8 +1008,7 @@ class SpectrumPlot:
                     SpectrumPlot.data_to_plot(graphSettings)
         titles = [
             (
-                # die Millisekunden entfernen, für kürzere Namen
-                f"{os.path.basename(org_set.measurement_path).split('.')[0]}"
+                f"{os.path.splitext(os.path.basename(org_set.measurement_path))[0]}"
                 + (
                     f"_g{org_set.grad_start}_g{org_set.grad_end}"
                     if setting.grad_end > 1

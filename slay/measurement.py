@@ -124,7 +124,7 @@ class Measurement:
             (self.init_spectrometer, ("a",)),
             (self.init_mcu, (serial_path, 3)),
             (self.init_nkt, (nkt_path,)),
-            # (self.init_ltb, (ltb_path,)),
+            (self.init_ltb, (ltb_path,)),
         ]
         if MEASUREMENT_SETTINGS.specto_b is not None:
             init_tasks.append((self.init_spectrometer, ("b",)))
@@ -143,7 +143,7 @@ class Measurement:
         # self.init_spectrometer()
         # self.init_mcu(serial_path, wait=3)
         # self.init_nkt(nkt_path)
-        self.init_ltb(ltb_path)
+        # self.init_ltb(ltb_path)
 
         self.messdata_a = SpectrumData(
             self.MEASUREMENT_SETTINGS.laser.num_gradiants,
@@ -173,7 +173,8 @@ class Measurement:
         self.measurement_file_name = (
             "overwrite-messung"
             if not self.MEASUREMENT_SETTINGS.UNIQUE
-            else str(datetime.datetime.now()).replace(":", "_")
+            # ohne Mikrosekunden, für kürzere Dateinamen
+            else datetime.datetime.now().strftime("%Y-%m-%d %H_%M_%S")
         )
 
         self.cam = USBCamera(
@@ -314,7 +315,7 @@ class Measurement:
         except serial.serialutil.SerialException as e:
             print(f"Failed to connect to the MCU: {e}")
             print("You may have to unplug and replug the MCU.")
-            # raise e
+            raise e
 
             from slay.virtual import MCU
 
@@ -396,6 +397,15 @@ class Measurement:
         print("setting LTB to stand by (should take 10 seconds until it warmed up)")
         # self.ltb.turn_laser_off()
         self.ltb.turn_laser_on()
+
+        self.ltb_stop_event = Event()
+        self.ltb_watchdog_thread = Thread(
+            target=self.ltb_watchdog,
+            args=(self.ltb_stop_event,),
+            daemon=True,
+        )
+        self.ltb_watchdog_thread.start()
+
         # self.ltb.start_repetition_mode()
         try:
             self.ltb.activate_external_trigger()
@@ -524,9 +534,7 @@ class Measurement:
                 + 2 * self.MEASUREMENT_SETTINGS.laser.SERIAL_DELAY
             )
         print(f"{prefix}thereof delays: {delays_time} ms")
-        print(
-            f"{prefix}a measurement took: {total_time_millis / 1.0 / repetitions} ms"
-        )
+        print(f"{prefix}a measurement took: {total_time_millis / 1.0 / repetitions} ms")
         print("without delays:")
         print(
             f"{prefix}a measurement took: {(total_time_millis - delays_time) / 1.0 / repetitions} ms"
@@ -536,12 +544,19 @@ class Measurement:
             flush=True,
         )
 
+    def _watchdog_wait(self, stop_event, seconds):
+        if stop_event is not None:
+            stop_event.wait(seconds)
+        else:
+            time.sleep(seconds)
+
     def mcu_watchdog(self, stop_event=None):
         while stop_event is None or not stop_event.is_set():
             self.send_firmware_signal("3")
-            time.sleep(
+            self._watchdog_wait(
+                stop_event,
                 self.MEASUREMENT_SETTINGS.specto.INTTIME / 1000.0
-                + self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000.0
+                + self.MEASUREMENT_SETTINGS.laser.MEASUREMENT_DELAY / 1000.0,
             )
 
     def ltb_watchdog(self, stop_event=None):
@@ -554,7 +569,7 @@ class Measurement:
                 #     print(status, flush=True)
             except LaserError as e:
                 print(f"ltb_watchdog: {e}, retrying next cycle", flush=True)
-            time.sleep(5)
+            self._watchdog_wait(stop_event, 5)
 
     def continuous_measurement(
         self, spectrometer, messdata, specto, repetitions, label=""
@@ -654,13 +669,8 @@ class Measurement:
         # binding for anything the spectrometer driver hasn't already been asked to do.
         # Thus, when later calling back to it via stop_all_devices() we would get "'MethodObject' object is not
         # callable".
-        ltb_stop = Event()
+        # ltb_watchdog läuft bereits seit init_ltb, da die Spektrometer teilweise eine erste Messung zur Initialisierung brauchen und der Laser dabei wieder in den Standby gehen könnte
         mcu_stop = Event()
-        ltb_p = Thread(
-            target=self.ltb_watchdog,
-            args=(ltb_stop,),
-            daemon=True,
-        )
         mcu_p = Thread(
             target=self.mcu_watchdog,
             args=(mcu_stop,),
@@ -683,7 +693,6 @@ class Measurement:
         )
         print("made threads", flush=True)
         try:
-            ltb_p.start()
             self.cam.start()
             print("started cam", flush=True)
             if self.MEASUREMENT_SETTINGS.UNIQUE:
@@ -716,12 +725,12 @@ class Measurement:
         except KeyboardInterrupt:
             print("Interrupted! Shutting down.")
         finally:
-            ltb_stop.set()
+            self.ltb_stop_event.set()
             mcu_stop.set()
 
-            if ltb_p.ident is not None:
-                ltb_p.join(timeout=10)
-                if ltb_p.is_alive():
+            if self.ltb_watchdog_thread.ident is not None:
+                self.ltb_watchdog_thread.join(timeout=10)
+                if self.ltb_watchdog_thread.is_alive():
                     print("ltb_watchdog did not stop in time!", flush=True)
             if mcu_p.ident is not None:
                 mcu_p.join(timeout=10)
@@ -793,8 +802,12 @@ class Measurement:
                                 file_name + ".npz",
                             ),
                             True,
+                            zoom_start=400,
+                            zoom_end=1000,
                         )
                     ],
                     self.MEASUREMENT_SETTINGS,
                     which=spectrometer,
+                    # der Plot wird ohnehin gespeichert. Bei einem jeweiligen einzelnen Aufruf würde WebAgg sonst blockieren
+                    show_plots=False,
                 )
