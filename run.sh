@@ -5,7 +5,7 @@ get_tty_path() {
   local PRODUCT_ID="$2"
   local SERIAL_ID="$3"
 
-  DEVICE_PATH=$(for device in /dev/ttyUSB*; do
+  DEVICE_PATH=$(for device in /dev/ttyUSB* /dev/ttyACM*; do
     if udevadm info -a -n "$device" | grep -q "ATTRS{idVendor}==\"$VENDOR_ID\"" &&
        udevadm info -a -n "$device" | grep -q "ATTRS{idProduct}==\"$PRODUCT_ID\""; then
 
@@ -68,6 +68,17 @@ usb_to_video() {
 
 run_docker_with_device() {
   local spec_path=$(get_usb_spec_path_by_ids "$1")
+
+  # the Thorlabs SDK needs the serial interface, not the USB node
+  local second_spec_path=""
+  if [ -n "$2" ]; then
+    local second_spec_vendor="${2%%:*}"
+    local second_spec_product="${2##*:}"
+    second_spec_path=$(get_tty_path "$second_spec_vendor" "$second_spec_product")
+    if [ -z "$second_spec_path" ]; then
+      echo "Could not find the tty device for the second spectrometer."
+    fi
+  fi
   # path to the FT232 Serial that is connected to the RX and TX pins of the ESP32 (and is used for communication with the MCU/ESP32)
   serial_path=$(get_tty_path "0403" "6001" "A5069RR4")
   # needed by usbreset
@@ -87,6 +98,10 @@ run_docker_with_device() {
     devices+="--device=$spec_path "
   else
     spec_path="none"
+  fi
+
+  if [ -n "$second_spec_path" ]; then
+    devices+="--device=$second_spec_path "
   fi
 
   if [ -n "$serial_path" ]; then
@@ -122,6 +137,9 @@ run_docker_with_device() {
   echo "Using NKT: $nkt_path"
   echo "Using LTB: $ltb_path"
   echo "Using spectrometer: $spec_path"
+  if [ -n "$second_spec_path" ]; then
+    echo "Using second spectrometer: $second_spec_path"
+  fi
   echo "Using camera: $cam_path"
   echo
 
@@ -145,13 +163,13 @@ run_docker_with_device() {
   # the port is used to attach the debugger
   # --rm is used as the container is unusable as soon as it stops, as the devices have to be added again.
   # Simply restarting would not work therefore.
-  docker run -v /home/user/slay/myproject/slay:/root/slay \
-    -e "DISPLAY=$DISPLAY" \
-    --mount type=bind,src=/tmp/.X11-unix,dst=/tmp/.X11-unix \
+  docker run -v "/home/$(whoami)/open-source/slay:/root/slay" \
     --mount type=bind,src="$cache_dir",dst="$docker_mount_point" \
-    --device=/dev/dri:/dev/dri \
+    --mount type=bind,src=/run/udev,dst=/run/udev,readonly \
     --rm \
     -p 5678:5678 \
+    -p 8988:8988 \
+    -p 8989:8989 \
     $devices \
     "laserdocker:$DOCKER_MODE" "$serial_path" "$nkt_path" "$ltb_path" "$cam_path" "$docker_mount_point"
     
@@ -188,9 +206,21 @@ lsmod | grep -q uvcvideo || sudo modprobe uvcvideo
 pkill hypridle
 # should there be any other instances that did not terminate properly
 shutdown_docker_containers
+
+# keep the string empty to disable the second spectrometer
+SECOND_SPEC_VENDOR_PRODUCT="1313:8113"
+second_spec_id=""
+if [ -n "$SECOND_SPEC_VENDOR_PRODUCT" ]; then
+  if [ -n "$(lsusb -d "$SECOND_SPEC_VENDOR_PRODUCT")" ]; then
+    second_spec_id="$SECOND_SPEC_VENDOR_PRODUCT"
+  else
+    echo "Could not find the second spectrometer, continuing without it."
+  fi
+fi
+
 # IDs of the spectrometer and the IDs of the device that is created after init of the spectrometer
-run_docker_with_device "$(lsusb  -d 04b4:8613)"
-run_docker_with_device "$(lsusb  -d 0bd7:a012)"
+run_docker_with_device "$(lsusb  -d 04b4:8613)" "$second_spec_id"
+run_docker_with_device "$(lsusb  -d 0bd7:a012)" "$second_spec_id"
 
 # Arduino. Try this, and when it fails, do it without adding it (so that I can select whether the Arduino should stil be availible to the Arduino IDE or not)
 # probably need some udev hooks in Dockerfile as well then.
