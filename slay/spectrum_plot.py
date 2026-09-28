@@ -703,7 +703,8 @@ class SpectrumPlot:
         )
 
         if grad_end < 0:
-            grad_end += len(spectrometer_data_gradient)
+            # -1 soll den letzten Gradient noch einschließen
+            grad_end += len(spectrometer_data_gradient) + 1
 
         assert grad_end - grad_start > 1
 
@@ -812,6 +813,11 @@ class SpectrumPlot:
         # ob es Graphen in dem Plot gibt, die mit der Legende kollidieren, wenn diese nicht außerhalb des Plots ist
         collide_graph = False
 
+        # bei Gradienten jeweils eine andere Farbe nutzen
+        gradient_cmap = plt.get_cmap("viridis")
+        used_gradient_colormap = False
+        gradient_index_bounds = None
+
         # plt.grid(True)
         if use_grid:
             plt.grid(visible=True, which="both", linestyle="--", linewidth=0.5)
@@ -834,6 +840,8 @@ class SpectrumPlot:
         # verschiedene Werte werden im Verlauf auf einer Kopie umgerechnet/geändert. Diese Änderungen speichern.
         changed_plotting_settings = []
 
+        drawn_gradient_vlines = []
+
         if any(s.single_wav for s in plotting_settings):
             assert all(s.single_wav for s in plotting_settings)
         for i, orig_setting in enumerate(plotting_settings):
@@ -846,7 +854,7 @@ class SpectrumPlot:
 
             (
                 spectrometer_data_gradient,
-                x_data,
+                full_x_data,
                 time_stamps_gradient,
                 measurement_settings,
             ) = SpectrumPlot.measurement_from_disk(
@@ -862,6 +870,8 @@ class SpectrumPlot:
                     "The specified number of gradients exceeds the number of gradients in the measurement."
                 )
 
+            multi_gradient = orig_setting.grad_end - orig_setting.grad_start > 1
+
             for grad_index in range(orig_setting.grad_start, orig_setting.grad_end):
 
                 spectrometer_data = spectrometer_data_gradient[grad_index]
@@ -875,6 +885,22 @@ class SpectrumPlot:
                 # alternativ könnte eins auch eine reset Methode machen, das ist aber denke ich simpler
                 setting = copy.deepcopy(orig_setting)
                 changed_plotting_settings.append(setting)
+
+                if (
+                    setting.single_wav
+                    and multi_gradient
+                    and grad_index != orig_setting.grad_start
+                ):
+                    boundary_x = round(float(begin_time_offset), 6)
+                    if boundary_x not in drawn_gradient_vlines:
+                        drawn_gradient_vlines.append(boundary_x)
+                        ax.axvline(
+                            boundary_x,
+                            color="gray",
+                            linestyle=":",
+                            linewidth=0.7,
+                            alpha=0.6,
+                        )
 
                 # falls es in Prozent angegeben wurde
                 if setting.interval_start_time < 1 and setting.interval_end_time <= 1:
@@ -909,28 +935,29 @@ class SpectrumPlot:
                 setting.zoom_start = (
                     0
                     if setting.zoom_start_wav == 0
-                    else (np.abs(x_data - setting.zoom_start_wav)).argmin()
+                    else (np.abs(full_x_data - setting.zoom_start_wav)).argmin()
                 )
                 if setting.single_wav:
                     setting.zoom_end = setting.zoom_start + 1
                 else:
                     setting.zoom_end = (
-                        len(x_data)
+                        len(full_x_data)
                         if setting.zoom_end_wav == sys.maxsize
-                        else (np.abs(x_data - setting.zoom_end_wav)).argmin()
+                        else (np.abs(full_x_data - setting.zoom_end_wav)).argmin()
                     )
 
                 # nur eine Wellenlänge über die Zeit plotten
                 if setting.single_wav:
-                    x_data = (time_stamps - time_stamps[0])[
+                    segment_time = time_stamps[
                         setting.interval_start : setting.interval_end
                     ]  # Zeit von UNIX time in delta Time in Minuten umrechnen
-                    print(f"Zeitlänge der Messung: {x_data[-1]:.2f} s")
+                    print(f"Zeitlänge der Messung: {segment_time[-1]:.2f} s")
+                    x_data = segment_time + begin_time_offset
                     x_ax_len = len(x_data)
                 else:
-                    assert len(x_data) == 2048
+                    assert len(full_x_data) == 2048
                     x_ax_len = setting.zoom_end - setting.zoom_start
-                    x_data = x_data[setting.zoom_start : setting.zoom_end]
+                    x_data = full_x_data[setting.zoom_start : setting.zoom_end]
 
                 # setting.zoom_end = (
                 #     len(x_data)
@@ -1028,12 +1055,28 @@ class SpectrumPlot:
                 # nimmt zu viel Platz ein: Einfach dazu schreiben
                 # label = f"Mittelwert von {rate} Messungen"
 
-                color = colors[i] if setting.color is None else setting.color
+                if multi_gradient and not setting.single_wav:
+                    gradient_frac = (grad_index - orig_setting.grad_start) / (
+                        orig_setting.grad_end - orig_setting.grad_start - 1
+                    )
+                    color = gradient_cmap(gradient_frac)
+                    used_gradient_colormap = True
+                    gradient_index_bounds = (
+                        orig_setting.grad_start,
+                        orig_setting.grad_end - 1,
+                    )
+                else:
+                    color = colors[i] if setting.color is None else setting.color
 
                 # blauer Text (\033[ ist Escape sequence start, 34m Blue color code, 0m color reset)
-                print(
-                    f"\033[34mmax: {np.max(y_data):.2f} at {x_data[np.argmax(y_data)]:.2f}\033[0m"
-                )
+                if setting.single_wav:
+                    print(
+                        f"\033[34mmax: {np.max(y_data):.2f} at {x_data[np.argmax(y_data)]:.2f} s\033[0m"
+                    )
+                else:
+                    print(
+                        f"\033[34mmax (excluding <510): {np.max(y_data[x_data > 510]):.2f} at {x_data[x_data > 510][np.argmax(y_data[x_data > 510])]:.2f} nm\033[0m"
+                    )
 
                 # wenn die linke Seite gerundet genauso groß wie die rechte ist, abrunden, ansonsten aufrunden
                 def round_left(x, y):
@@ -1051,6 +1094,10 @@ class SpectrumPlot:
                         # f"{round_left(setting.interval_start_time + begin_time_offset, setting.interval_end_time + begin_time_offset)} s - {round_right(setting.interval_start_time + begin_time_offset, setting.interval_end_time + begin_time_offset)} s"
                         f"{(setting.interval_start_time + begin_time_offset):.2f} s - {(setting.interval_end_time + begin_time_offset):.2f} s"
                         if setting.sliced and not setting.single_wav
+                        # bei mehreren Gradienten nur einmalig labeln
+                        and (
+                            not multi_gradient or grad_index == orig_setting.grad_start
+                        )
                         else None
                     ),
                     smooth=setting.smooth,
@@ -1066,7 +1113,7 @@ class SpectrumPlot:
                 )
                 collide_graph = SpectrumPlot.data_to_plot(graphSettings, collide_graph)
 
-                if not multiple_plots and not setting.single_wav:
+                if not multiple_plots and not setting.single_wav and not multi_gradient:
                     if fig_colorful is None and ax_colorful is None:
                         fig_colorful, ax_colorful = plt.subplots()
                     graphSettings.fig = fig_colorful
@@ -1076,6 +1123,13 @@ class SpectrumPlot:
                     graphSettings.std = None
 
                     SpectrumPlot.data_to_plot(graphSettings)
+
+        if used_gradient_colormap:
+            norm = plt.Normalize(*gradient_index_bounds)
+            sm = matplotlib.cm.ScalarMappable(cmap=gradient_cmap, norm=norm)
+            sm.set_array([])
+            fig.colorbar(sm, ax=ax, label="Gradient-Index")
+
         titles = [
             (
                 f"{os.path.splitext(os.path.basename(org_set.measurement_path))[0]}"
@@ -1138,7 +1192,7 @@ class SpectrumPlot:
         figures = [fig]
         suffixes = [""]
 
-        if not multiple_plots and not setting.single_wav:
+        if not multiple_plots and not setting.single_wav and not multi_gradient:
             figures.append(fig_colorful)
             suffixes.append("_colorful")
 
