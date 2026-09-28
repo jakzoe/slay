@@ -383,6 +383,41 @@ class SpectrumPlot:
                     label=label_str,
                 )
 
+                if settings.single_wav:
+                    # beziehen sich beide auf t=0, also die allererste Messung
+                    half_life = np.log(2) / abs(b)
+                    extinction_fraction = 0.05
+                    # nur noch extinction_fraction Prozent der ursprünglichen Fluoreszenz übrig
+                    extinction_time = np.log(1 / extinction_fraction) / abs(b)
+
+                    box_style = {
+                        "boxstyle": "round",
+                        "facecolor": "wheat",
+                        "alpha": 0.8,
+                    }
+                    settings.ax.text(
+                        0.97,
+                        0.95,
+                        rf"$t_{{1/2}} \approx {half_life:.1f}$ s",
+                        transform=settings.ax.transAxes,
+                        fontsize=7,
+                        verticalalignment="top",
+                        horizontalalignment="right",
+                        bbox=box_style,
+                    )
+                    settings.ax.text(
+                        0.97,
+                        0.78,
+                        r"$t_{{I_F < {} \,\%}} \approx {:.1f}$ s".format(
+                            extinction_fraction * 100, extinction_time
+                        ),
+                        transform=settings.ax.transAxes,
+                        fontsize=7,
+                        verticalalignment="top",
+                        horizontalalignment="right",
+                        bbox=box_style,
+                    )
+
         # die Daten im Scatter-Plot aktualisieren
         # self.scatter.set_offsets(np.column_stack((wav, measurement)))
         # self.scatter.set_label(label)
@@ -442,12 +477,10 @@ class SpectrumPlot:
             settings.ax.legend(**options)
             settings.fig.canvas.draw()
 
+            # Legende außerhalb platzieren weil kein Platz sonst
             if (
-                SpectrumPlot.legend_collides(
-                    settings.ax,
-                    settings.x_data,
-                    settings.y_data,
-                )
+                settings.single_wav
+                or SpectrumPlot.legend_collides(settings.ax)
                 or collide_graph
             ):
 
@@ -485,6 +518,30 @@ class SpectrumPlot:
                     < orig_bounds[-1] - settings.ax.get_position().bounds[-2]
                 ):
                     options["ncols"] = 1
+                    settings.ax.legend(**options)
+                    settings.fig.canvas.draw()
+
+                # solange rumprobieren, bis die Legende nicht breiter als die Figure ist (sieht sonst schlimm aus und macht den Plot zu klein)
+                fig_width = settings.fig.get_size_inches()[0] * settings.fig.dpi
+                min_fontsize = 4
+                min_markerscale = 1
+                for _ in range(15):
+                    legend = settings.ax.get_legend()
+                    legend_width = legend.get_window_extent().width
+                    if legend_width <= fig_width:
+                        break
+                    current_fontsize = legend.get_texts()[0].get_fontsize()
+                    current_markerscale = options["markerscale"]
+                    if (
+                        current_fontsize <= min_fontsize
+                        and current_markerscale <= min_markerscale
+                    ):
+                        break
+                    scale = fig_width / legend_width * 0.95
+                    options["fontsize"] = max(current_fontsize * scale, min_fontsize)
+                    options["markerscale"] = max(
+                        current_markerscale * scale, min_markerscale
+                    )
                     settings.ax.legend(**options)
                     settings.fig.canvas.draw()
 
