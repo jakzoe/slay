@@ -46,47 +46,47 @@ except IndexError:
 if __name__ == "__main__":
 
     measurement_settings = MeasurementSettings(
-        UNIQUE=False,
-        TYPE="ThorlabsTest",
+        UNIQUE=True,
+        TYPE="RapsSonne4060",
         CUVETTE_WINDOWS=4,
         TIMEOUT=1000000,  # disable
         WATCHDOG_GRACE=200,
-        FILLING_QUANTITY=5 * 800,  # in ml
+        FILLING_QUANTITY=5_000,  # in ul
         OXYGEN_SPEED=-1,  # 50 cm^3 / min
-        # specto=MeasurementSettings.StellarnetSpectoSettings(
-        #     # 1-498_000 ms
-        #     INTTIME=10_000,  # 10000 # int(1000 * 60 * 0.5),
-        #     SCAN_AVG=1,
-        #     SMOOTH=0,
-        #     XTIMING=3,
-        # ),
         specto=MeasurementSettings.ThorlabsSpectoSettings(
-            # 1-498_000 ms
-            INTTIME=2_000,  # 10000 # int(1000 * 60 * 0.5),
+            INTTIME=400,  # 20
             SCAN_AVG=1,
-            AMPLIFICATION=False
+            AMPLITUDE_CORRECTION=True,
+            DARK_SPECTRUM_CALIBRATION=True,
+            GAIN=2,
         ),
+        # specto_b=MeasurementSettings.StellarnetSpectoSettings(
+        #     INTTIME=100, SCAN_AVG=1, SMOOTH=0, XTIMING=3, TEMP_COMP=True
+        # ),
         laser=MeasurementSettings.LaserSettings(
-            REPETITIONS=2,
-            MEASUREMENT_DELAY=3,
+            REPETITIONS=60,
+            # REPETITIONS_B=60,
+            #
+            MEASUREMENT_DELAY=60_000,  # 60_000
             IRRADITION_TIME=3,
             SERIAL_DELAY=3,
-            INTENSITY_NKT="1",  # "np.linspace(0, 100, 10)",
+            #
+            INTENSITY_NKT="100",  # "np.linspace(0, 100, 10)",
+            #
             PWM_FREQ_405="2000",
             PWM_RES_BITS_405="13",
-            PWM_DUTY_PERC_405="0.37",  # np.linspace(0.2, 1, 5)
+            PWM_DUTY_PERC_405="0",  # np.linspace(0.2, 1, 5)
             #
             PWM_FREQ_445="2000",
             PWM_RES_BITS_445="13",
-            PWM_DUTY_PERC_445="0.2",  # np.linspace(1, 5, 5)
+            PWM_DUTY_PERC_445="100",
             #
-            REPETITIONS_LTB="55",  # range(5,55,10)
+            REPETITIONS_LTB="0",  # range(5,55,10)
             INTENSITY_LTB="100",
             ND_NKT=0,
             ND_405=0,
             ND_445=0,
             CONTINUOUS=True,
-            FOCUS_DIST=0,
         ),
     )
 

@@ -9,28 +9,26 @@ import multiprocessing
 import copy
 from pathlib import Path
 
-
 delete_old_pictures = True
 # Flags um schnell bestimmte plots nicht zu generieren
 plot_general = True
 plot_fluo = True
-plot_interpolate_only = False
+plot_interpolate_only = True
 dont_plot_interpolate = False
 assert (plot_interpolate_only and dont_plot_interpolate) is False
 plot_time_slices = True
+
+zoom_start = PlotSettings.default_min
+zoom_end = PlotSettings.default_max
+zoom_start = 350
+zoom_end = 900
 
 # nur bestimmtes plotten. Leer ist disable (alles plotten). Enthält Keyword, welches in dem Namen sein muss.
 # plot_list = [
 #     #  "Chlorophyll4HalbIsopropanol"
 # ]  # []  # ["Gradiant", "Tageslicht", "Neutral"]
 plot_list = [
-    # "Chlorophyll",
-    # "Chlorophyll2HalbIsopropanol",
-    # "Chlorophyll3HalbIsopropanol",
-    # "Chlorophyll4HalbIsopropanol",
-    # "Chlorophyll5HalbIsopropanol",
-    # "Wasser",
-    # "Tonic",
+    # "RapsSonne4060"
 ]
 
 root_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "messungen/")
@@ -93,15 +91,28 @@ def make_plots(path, name):
     print("\033[32m\033[4m" + name + "\033[0m")
 
     SpectrumPlot.plot_heatmap(measurement_path, m_settings, 0)
+
+    if m_settings.laser.num_gradiants > 1:
+        SpectrumPlot.plot_3d_gradient(measurement_path, m_settings)
     # return
 
     # Generellen Durchschnitt plotten
     if plot_general:
-        p_settings.append([PlotSettings(measurement_path, smooth=True)])
+        p_settings.append(
+            [
+                PlotSettings(
+                    measurement_path,
+                    smooth=True,
+                    zoom_start=zoom_start,
+                    zoom_end=zoom_end,
+                )
+            ]
+        )
 
     # Fluoreszenz-Peak plotten (ca. zwischen 720 und 740 nm bei Chlorophyll)
     # ergibt nur Sinn, wenn es einigermaßen viele Datenpunkte gibt
-    if plot_fluo and m_settings.laser.REPETITIONS > 15:
+    print(m_settings.laser.REPETITIONS * m_settings.laser.num_gradiants)
+    if plot_fluo and m_settings.laser.REPETITIONS * m_settings.laser.num_gradiants > 15:
         first_len = len(p_settings)
         p_settings.extend(
             (
@@ -109,7 +120,7 @@ def make_plots(path, name):
                     PlotSettings(
                         measurement_path,
                         smooth=True,
-                        single_wav=730,
+                        single_wav=432.8,
                         scatter=True,
                     )
                 ],
@@ -117,7 +128,7 @@ def make_plots(path, name):
                     PlotSettings(
                         measurement_path,
                         smooth=True,
-                        single_wav=740,
+                        single_wav=525,
                         scatter=True,
                     )
                 ],
@@ -125,7 +136,7 @@ def make_plots(path, name):
                     PlotSettings(
                         measurement_path,
                         smooth=True,
-                        single_wav=750,
+                        single_wav=570,
                         scatter=True,
                     )
                 ],
@@ -133,40 +144,120 @@ def make_plots(path, name):
                     PlotSettings(
                         measurement_path,
                         smooth=True,
-                        single_wav=520,
+                        single_wav=660,
                         scatter=True,
-                    ),
+                    )
                 ],
                 [
                     PlotSettings(
                         measurement_path,
                         smooth=True,
-                        single_wav=530,
+                        single_wav=665,
                         scatter=True,
-                    ),
+                    )
                 ],
                 [
                     PlotSettings(
                         measurement_path,
                         smooth=True,
-                        single_wav=540,
+                        single_wav=670,
                         scatter=True,
-                    ),
+                    )
                 ],
                 [
                     PlotSettings(
                         measurement_path,
                         smooth=True,
-                        single_wav=540,
+                        single_wav=675,
                         scatter=True,
-                    ),
+                    )
+                ],
+                [
                     PlotSettings(
                         measurement_path,
                         smooth=True,
-                        single_wav=740,
+                        single_wav=680,
                         scatter=True,
-                    ),
+                    )
                 ],
+                [
+                    PlotSettings(
+                        measurement_path,
+                        smooth=True,
+                        single_wav=685,
+                        scatter=True,
+                    )
+                ],
+                [
+                    PlotSettings(
+                        measurement_path,
+                        smooth=True,
+                        single_wav=690,
+                        scatter=True,
+                    )
+                ],
+                # [
+                #     PlotSettings(
+                #         measurement_path,
+                #         smooth=True,
+                #         single_wav=730,
+                #         scatter=True,
+                #     )
+                # ],
+                # [
+                #     PlotSettings(
+                #         measurement_path,
+                #         smooth=True,
+                #         single_wav=740,
+                #         scatter=True,
+                #     )
+                # ],
+                # [
+                #     PlotSettings(
+                #         measurement_path,
+                #         smooth=True,
+                #         single_wav=750,
+                #         scatter=True,
+                #     )
+                # ],
+                # [
+                #     PlotSettings(
+                #         measurement_path,
+                #         smooth=True,
+                #         single_wav=520,
+                #         scatter=True,
+                #     ),
+                # ],
+                # [
+                #     PlotSettings(
+                #         measurement_path,
+                #         smooth=True,
+                #         single_wav=530,
+                #         scatter=True,
+                #     ),
+                # ],
+                # [
+                #     PlotSettings(
+                #         measurement_path,
+                #         smooth=True,
+                #         single_wav=540,
+                #         scatter=True,
+                #     ),
+                # ],
+                # [
+                #     PlotSettings(
+                #         measurement_path,
+                #         smooth=True,
+                #         single_wav=540,
+                #         scatter=True,
+                #     ),
+                #     PlotSettings(
+                #         measurement_path,
+                #         smooth=True,
+                #         single_wav=740,
+                #         scatter=True,
+                #     ),
+                # ],
             )
         )
         last_len = len(p_settings)
@@ -194,6 +285,8 @@ def make_plots(path, name):
                         smooth=smooth,
                         interval_start=0,
                         interval_end=1 / 3,
+                        zoom_start=zoom_start,
+                        zoom_end=zoom_end,
                         scatter=False,
                         line_style="-",
                         color="black",
@@ -203,6 +296,8 @@ def make_plots(path, name):
                         smooth=smooth,
                         interval_start=1 / 3,
                         interval_end=2 / 3,
+                        zoom_start=zoom_start,
+                        zoom_end=zoom_end,
                         line_style="--",
                         color="red",
                     ),
@@ -211,6 +306,8 @@ def make_plots(path, name):
                         smooth=smooth,
                         interval_start=2 / 3,
                         interval_end=3 / 3,
+                        zoom_start=zoom_start,
+                        zoom_end=zoom_end,
                         line_style=":",
                         color="blue",
                     ),
@@ -229,6 +326,10 @@ def make_plots(path, name):
     sys.stdout = original_stdout
     print(output)
     # print(sys.stderr.getvalue())
+
+
+def worker(args):
+    return make_plots(*args)
 
 
 if __name__ == "__main__":
@@ -277,13 +378,6 @@ if __name__ == "__main__":
             if (f.endswith((".npz")) and "overwrite-messung" not in f)
         ]
 
-        if delete_old_pictures:
-            pic_names = [
-                os.path.splitext(f)[0] for f in os.listdir(path) if f.endswith((".png"))
-            ]
-            for pic_name in pic_names:
-                os.remove(os.path.join(path, pic_name + ".png"))
-
         # ob das Element in der white/blacklist ist
         measurement_name = os.path.basename(path)
         if plot_list and (
@@ -292,6 +386,13 @@ if __name__ == "__main__":
         ):
             # print(f"skipping {path}")
             continue
+
+        if delete_old_pictures:
+            pic_names = [
+                os.path.splitext(f)[0] for f in os.listdir(path) if f.endswith((".png"))
+            ]
+            for pic_name in pic_names:
+                os.remove(os.path.join(path, pic_name + ".png"))
 
         for name in names:
             tasks.append((path, name))
@@ -304,15 +405,13 @@ if __name__ == "__main__":
     # print("generated plots!", flush=True)
     # exit()
 
-    # lambda geht nicht...
-    def worker(args):
-        return make_plots(*args)
-
     start_time = time.time()
 
     try:
-        with ProcessPoolExecutor(max_workers=int(os.cpu_count() / 1.5)) as executor:
-            executor.map(worker, tasks)
+        with ProcessPoolExecutor(max_workers=int(os.cpu_count() / 1.2)) as executor:
+            # sonst fallen Exceptions nicht auf
+            for _ in executor.map(worker, tasks):
+                pass
     except KeyboardInterrupt:
         multiprocessing.active_children()
         for p in multiprocessing.active_children():
