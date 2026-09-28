@@ -120,14 +120,26 @@ class SpectrumPlot:
         return (r, g, b, a)
 
     @staticmethod
-    def legend_collides(ax, px, py):
+    def legend_collides(ax):
 
         bbox_legend = ax.get_legend().get_window_extent()
         # in Datenkoordinaten umrechnen
         x0, y0 = ax.transData.inverted().transform((bbox_legend.x0, bbox_legend.y0))
         x1, y1 = ax.transData.inverted().transform((bbox_legend.x1, bbox_legend.y1))
-        for x, y in zip(px, py):
-            if x >= x0 and x <= x1 and y >= y0 and y <= y1:
+
+        def points_collide(px, py):
+            px, py = np.asarray(px), np.asarray(py)
+            return np.any((px >= x0) & (px <= x1) & (py >= y0) & (py <= y1))
+
+        for line in ax.get_lines():
+            if points_collide(line.get_xdata(), line.get_ydata()):
+                return True
+
+        for collection in ax.collections:
+            offsets = collection.get_offsets()
+            if len(offsets) == 0:
+                continue
+            if points_collide(offsets[:, 0], offsets[:, 1]):
                 return True
 
         return False
@@ -280,7 +292,8 @@ class SpectrumPlot:
 
             algo = rpt.Pelt(model="rbf", jump=1).fit(settings.y_data)  # Dynp
             try:
-                result = algo.predict(pen=0.7)  # n_bkps=2
+                result = algo.predict(pen=0.05)  # n_bkps=2
+                # raise rpt.exceptions.BadSegmentationParameters
             except rpt.exceptions.BadSegmentationParameters:
                 result = [0, len(settings.y_data), len(settings.y_data)]
 

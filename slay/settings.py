@@ -258,6 +258,11 @@ class MeasurementSettings:
             return from_dict(specto_cls, specto_dict)
 
         def from_dict(cls, dict_data):
+            # alte Felder, die es nicht mehr gibt ignorieren
+            known_fields = {field.name for field in fields(cls)}
+            dict_data = {
+                key: value for key, value in dict_data.items() if key in known_fields
+            }
             if cls == MeasurementSettings:
                 specto_dict = dict_data.pop("specto")
                 specto_b_dict = dict_data.pop("specto_b", None)

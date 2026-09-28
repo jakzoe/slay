@@ -29,6 +29,12 @@ class ThorlabsSpectrometer:
             self._manager.close()
             raise
 
+        adc_bits = self._spectrometer.resolution_adc_bits
+        print(
+            f"Thorlabs Spektrometer {self._spectrometer.device_id} hat {adc_bits} bits, also eigentlich max Counts {2**adc_bits - 1}",
+            flush=True,
+        )
+
         self._last_spectrum = None
         self._closed = False
 

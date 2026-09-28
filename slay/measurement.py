@@ -613,8 +613,10 @@ class Measurement:
 
         for gradient in range(self.MEASUREMENT_SETTINGS.laser.num_gradiants):
             self.messdata_a.curr_gradiant = gradient
+            self.messdata_a.curr_measurement_index = -1
             if dual:
                 self.messdata_b.curr_gradiant = gradient
+                self.messdata_b.curr_measurement_index = -1
 
             self.set_laser_powers(gradient)
 
